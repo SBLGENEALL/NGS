@@ -132,7 +132,10 @@ alias를 매핑한 sample sheet를 MinKNOW에 등록해두면, basecalling/demul
 3. `data/<날짜>_<실험명>/`에 (위와 동일한 폴더명으로) MinKNOW/Guppy/Dorado의
    barcode별(또는 alias별) fastq.gz 폴더를 넣는다.
 4. 필요하면 `config.yaml`에서 minimap2 preset, threads, QC 필터링 기준,
-   variant caller(`bcftools` 또는 `medaka`)를 조정한다.
+   variant caller(`bcftools`, `medaka`, 또는 `pilon`)를 조정한다.
+   `pilon`을 쓰려면 별도로 설치된 Java와 `pilon-*.jar` 경로
+   (`pilon_jar`)가 필요하다 (자세한 내용은 아래 "Pilon 기반 변이/오류
+   검출" 참고).
 
 ## 실행
 
@@ -177,10 +180,16 @@ python scripts/summarize_variants.py --results results --output results/summary_
 
 `results/summary_report.md`에 다음과 같은 표가 생성됩니다:
 
-| Experiment | Sample | Mapping | Mean depth | SNP | Ins | Del | Variants |
-|---|---|---|---|---|---|---|---|
-| 260609_TPase | R34.141-DAR-revSPG23_TIR90 | 99.1% (...) | 120.34x | 0 | 0 | 0 | None |
-| 260609_TPase | 02_xxx | 98.4% (...) | 87.10x | 1 | 0 | 1 | SNP @1523 G>A; del @3010 AT>A |
+| Experiment | Sample | Mapping | Mean depth | Method | SNP | Ins | Del | Variants |
+|---|---|---|---|---|---|---|---|---|
+| 260609_TPase | R34.141-DAR-revSPG23_TIR90 | 99.1% (...) | 120.34x | bcftools/medaka | 0 | 0 | 0 | None |
+| 260609_TPase | 02_xxx | 98.4% (...) | 87.10x | pilon | 1 | 0 | 1 | SNP @1523 G>A; del @3010 AT>A |
+
+`Method` 열은 해당 샘플의 변이가 어디서 나왔는지를 보여줍니다
+(`pilon`: `<reference_name>.changes` 파일 기반, `bcftools/medaka`: `.vcf.gz`
+기반). `variant_caller: pilon`일 때는 `--min-qual`/`--min-depth` 필터가
+적용되지 않습니다 (Pilon의 `.changes`에는 이미 실제로 수정한 위치만
+나열되기 때문입니다).
 
 - `Variants` 열이 `None`이면 레퍼런스 대비 호출된 변이가 없는 샘플입니다.
 - CSV로 받고 싶으면 `--output results/summary_report.csv`처럼 확장자를
@@ -225,3 +234,43 @@ homopolymer 에러도 `0/1` heterozygous 변이로 호출되어 노이즈가 많
 됩니다 (read 병합 단계는 결과가 이미 있으면 건너뛰고, mapping/consensus/
 variant calling은 새 옵션으로 다시 생성됩니다). 그 후
 `summarize_variants.py`도 다시 실행해서 요약을 갱신하세요.
+
+### Pilon 기반 변이/오류 검출 (`variant_caller: pilon`)
+
+기존에 사용하던 BWA + Pilon 기반 스크립트와 동일한 방식으로 변이를
+검출하고 싶다면 `config.yaml`에서 다음과 같이 설정하세요:
+
+```yaml
+variant_caller: pilon
+pilon_jar: /home/mect/install_file/usbmnt/17.pilon/pilon-1.24.jar
+pilon_mem: 16G
+```
+
+- `pilon_jar`: `pilon-*.jar`의 절대 경로 (또는 `config.yaml`이 있는
+  폴더 기준 상대 경로). 이 값이 비어있거나 파일을 찾을 수 없으면 해당
+  샘플의 variant calling 단계는 건너뜁니다 (경고만 출력).
+- `pilon_mem`: Pilon(Java)에 할당할 최대 힙 메모리 (`-Xmx` 값). 워크스테이션의
+  가용 메모리에 맞게 조정하세요 (예: `200G`).
+- Pilon은 conda 환경이 아닌 별도로 설치된 Java(JRE/JDK)가 필요합니다.
+  `java -version`이 동작하는지 먼저 확인하세요.
+
+`variant_caller: pilon`일 때 5단계(variant calling)는 minimap2로 만든
+정렬 결과(`<reference_name>.sorted.bam`)에 대해 다음 명령으로 실행됩니다:
+
+```bash
+java -Xmx<pilon_mem> -jar <pilon_jar> \
+    --genome <reference>.fasta --bam <reference_name>.sorted.bam \
+    --output <reference_name> --outdir results/.../pilon \
+    --fix all --mindepth 2.0 --changes --vcf --verbose --threads <threads>
+```
+
+생성되는 파일:
+
+- `<reference_name>.changes`: Pilon이 실제로 수정(교정)한 위치 목록
+  (`old_locus new_locus old_seq new_seq` 형식). 결과 폴더 최상위에도
+  복사되어 `summarize_variants.py`가 자동으로 읽습니다.
+- `<reference_name>.vcf.gz`: Pilon의 `--vcf` 출력 중 변화가 없는 위치
+  (`ALT="."`)는 제거하고, 실제 변이/교정 레코드만 남긴 VCF
+  (다른 variant caller와 동일한 형식으로 맞춰서 저장).
+- 원본 Pilon 출력(`*.changes`, `*.vcf`, `*.fasta`, 로그 등)은
+  `results/.../<reference_name>/pilon/` 폴더에 그대로 남아있습니다.

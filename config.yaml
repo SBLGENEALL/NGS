@@ -35,5 +35,14 @@ min_read_length: 0
 # Minimum mean read quality kept during QC filtering (NanoFilt), 0 disables filtering
 min_read_quality: 0
 
-# Variant calling backend: "bcftools" (default, always available) or "medaka"
+# Variant calling backend: "bcftools" (default, always available),
+# "medaka", or "pilon" (requires pilon_jar below).
 variant_caller: bcftools
+
+# Required if variant_caller: pilon. Path to pilon-*.jar (absolute path,
+# or relative to this config file's directory).
+# e.g. pilon_jar: /home/mect/install_file/usbmnt/17.pilon/pilon-1.24.jar
+pilon_jar: ""
+
+# Java heap size for pilon (-Xmx)
+pilon_mem: 16G

@@ -66,6 +66,45 @@ def read_vcf_variants(vcf_path, min_qual=0.0, min_depth=0):
     return variants
 
 
+def read_changes_variants(changes_path):
+    """Parse a Pilon *.changes file into the same (pos, type, ref, alt) tuples
+    used for VCF variants, so format_variants() can be reused.
+
+    Each line looks like:
+        <old_locus> <new_locus> <old_seq> <new_seq>
+    e.g.
+        pUC19:1234-1234 pUC19:1234-1234 A C
+    where old_seq/new_seq is "." for pure insertions/deletions.
+    """
+    variants = []
+    with open(changes_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            cols = line.split()
+            if len(cols) < 4:
+                continue
+            old_locus, _new_locus, old_seq, new_seq = cols[0], cols[1], cols[2], cols[3]
+
+            m = re.match(r"^[^:]+:(\d+)", old_locus)
+            pos = m.group(1) if m else "?"
+
+            ref = "" if old_seq == "." else old_seq
+            alt = "" if new_seq == "." else new_seq
+
+            if len(ref) == 1 and len(alt) == 1:
+                vtype = "point mutation"
+            elif len(alt) > len(ref):
+                vtype = "insertion"
+            elif len(alt) < len(ref):
+                vtype = "deletion"
+            else:
+                vtype = "complex"
+            variants.append((pos, vtype, ref if ref else ".", alt if alt else "."))
+    return variants
+
+
 def read_report_fields(report_path):
     """Pull 'Mapping' and 'Mean depth' lines out of a *_report.md file."""
     mapping, depth = "", ""
@@ -112,12 +151,22 @@ def main():
             if not os.path.isdir(sample_dir):
                 continue
             vcf_path = os.path.join(sample_dir, f"{sample_name}.vcf.gz")
+            changes_path = os.path.join(sample_dir, f"{sample_name}.changes")
             report_path = os.path.join(sample_dir, f"{sample_name}_report.md")
-            if not os.path.isfile(vcf_path):
+            if not os.path.isfile(vcf_path) and not os.path.isfile(changes_path):
                 continue
 
             mapping, depth = read_report_fields(report_path)
-            variants = read_vcf_variants(vcf_path, min_qual=args.min_qual, min_depth=args.min_depth)
+
+            if os.path.isfile(changes_path):
+                # Pilon: .changes already lists only the corrections made,
+                # so no QUAL/DP filtering applies.
+                method = "pilon"
+                variants = read_changes_variants(changes_path)
+            else:
+                method = "bcftools/medaka"
+                variants = read_vcf_variants(vcf_path, min_qual=args.min_qual, min_depth=args.min_depth)
+
             n_snp = sum(1 for v in variants if v[1] == "point mutation")
             n_ins = sum(1 for v in variants if v[1] == "insertion")
             n_del = sum(1 for v in variants if v[1] == "deletion")
@@ -127,6 +176,7 @@ def main():
                 "sample": sample_name,
                 "mapping": mapping,
                 "mean_depth": depth,
+                "method": method,
                 "n_snp": n_snp,
                 "n_ins": n_ins,
                 "n_del": n_del,
@@ -138,17 +188,17 @@ def main():
 
     if args.output.lower().endswith(".csv"):
         with open(args.output, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["experiment", "sample", "mapping", "mean_depth",
+            writer = csv.DictWriter(f, fieldnames=["experiment", "sample", "mapping", "mean_depth", "method",
                                                      "n_snp", "n_ins", "n_del", "variants"])
             writer.writeheader()
             writer.writerows(rows)
     else:
         with open(args.output, "w") as f:
             f.write("# Variant summary\n\n")
-            f.write("| Experiment | Sample | Mapping | Mean depth | SNP | Ins | Del | Variants |\n")
-            f.write("|---|---|---|---|---|---|---|---|\n")
+            f.write("| Experiment | Sample | Mapping | Mean depth | Method | SNP | Ins | Del | Variants |\n")
+            f.write("|---|---|---|---|---|---|---|---|---|\n")
             for r in rows:
-                f.write(f"| {r['experiment']} | {r['sample']} | {r['mapping']} | {r['mean_depth']} "
+                f.write(f"| {r['experiment']} | {r['sample']} | {r['mapping']} | {r['mean_depth']} | {r['method']} "
                         f"| {r['n_snp']} | {r['n_ins']} | {r['n_del']} | {r['variants']} |\n")
 
     print(f"Wrote summary for {len(rows)} sample(s) to {args.output}")

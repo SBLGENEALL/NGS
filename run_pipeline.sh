@@ -63,6 +63,11 @@ MIN_LEN="$(read_cfg min_read_length 0)"
 MIN_QUAL="$(read_cfg min_read_quality 0)"
 VARIANT_CALLER="$(read_cfg variant_caller bcftools)"
 PARALLEL_JOBS="$(read_cfg parallel_jobs 1)"
+PILON_JAR="$(read_cfg pilon_jar "")"
+if [[ -n "$PILON_JAR" && "$PILON_JAR" != /* ]]; then
+    PILON_JAR="$SCRIPT_DIR/$PILON_JAR"
+fi
+PILON_MEM="$(read_cfg pilon_mem 16G)"
 
 # bcftools mpileup supports a "-X ont" config preset that tunes indel/SNP
 # calling parameters for ONT's error profile (much fewer false-positive
@@ -251,6 +256,32 @@ process_one() {
         medaka_haploid_variant -i "$READS_FOR_MAPPING" -r "$REF_PATH" -o "$SAMPLE_DIR/medaka"
         cp "$SAMPLE_DIR/medaka/medaka.annotated.vcf" "$SAMPLE_DIR/${REF_NAME}.vcf" 2>/dev/null || true
         bgzip -f "$SAMPLE_DIR/${REF_NAME}.vcf"
+    elif [[ "$VARIANT_CALLER" == "pilon" ]]; then
+        if [[ -z "$PILON_JAR" || ! -f "$PILON_JAR" ]]; then
+            echo "$LOG [SKIP] variant_caller=pilon but pilon_jar not found: '$PILON_JAR'" >&2
+        else
+            local PILON_DIR="$SAMPLE_DIR/pilon"
+            mkdir -p "$PILON_DIR"
+            java -Xmx"$PILON_MEM" -jar "$PILON_JAR" \
+                --genome "$REF_PATH" --bam "$SORTED_BAM" \
+                --output "$REF_NAME" --outdir "$PILON_DIR" \
+                --fix all --mindepth 2.0 --changes --vcf --verbose --threads "$THREADS" \
+                > "$PILON_DIR/${REF_NAME}.pilon.log" 2>&1
+
+            # .changes file: one line per correction (POS REF->ALT), copied
+            # next to the other per-sample outputs for easy inspection.
+            if [[ -f "$PILON_DIR/${REF_NAME}.changes" ]]; then
+                cp "$PILON_DIR/${REF_NAME}.changes" "$SAMPLE_DIR/${REF_NAME}.changes"
+            fi
+
+            # Pilon's --vcf includes every reference position (ALT="." where
+            # no change was made); keep only the actual variant records so
+            # it matches the bcftools/medaka output format.
+            if [[ -f "$PILON_DIR/${REF_NAME}.vcf" ]]; then
+                bcftools view -e 'ALT="."' "$PILON_DIR/${REF_NAME}.vcf" -Oz -o "$VCF"
+                bcftools index -f "$VCF"
+            fi
+        fi
     else
         bcftools mpileup $BCFTOOLS_PLATFORM_OPT -f "$REF_PATH" "$SORTED_BAM" 2>/dev/null \
             | bcftools call --ploidy 1 -mv -Oz -o "$VCF"
@@ -317,7 +348,7 @@ echo "==================================================================="
 echo " Running $JOB_COUNT sample(s), $PARALLEL_JOBS at a time"
 echo "==================================================================="
 
-export DATA_ROOT RESULTS_ROOT PRESET THREADS MIN_LEN MIN_QUAL VARIANT_CALLER BCFTOOLS_PLATFORM_OPT
+export DATA_ROOT RESULTS_ROOT PRESET THREADS MIN_LEN MIN_QUAL VARIANT_CALLER BCFTOOLS_PLATFORM_OPT PILON_JAR PILON_MEM
 export -f process_one
 
 if [[ "$JOB_COUNT" -gt 0 ]]; then
