@@ -20,8 +20,14 @@ results_dir: results
 # minimap2 mapping preset for ONT reads
 minimap2_preset: map-ont
 
-# Number of threads to use for minimap2 / samtools
+# Number of threads to use for minimap2 / samtools, PER SAMPLE
 threads: 4
+
+# Number of samples (reference fastas) to process at the same time.
+# Each sample uses up to "threads" CPU cores, so on a high-core
+# workstation set threads * parallel_jobs <= number of CPU cores.
+# E.g. on a 256-core machine: threads: 8, parallel_jobs: 32
+parallel_jobs: 1
 
 # Minimum read length kept during QC filtering (NanoFilt), 0 disables filtering
 min_read_length: 0
