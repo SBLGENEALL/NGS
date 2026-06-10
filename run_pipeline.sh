@@ -11,16 +11,16 @@
 #
 # Layout:
 #   references/<date>_<experiment_name>/<reference_name>.fasta
-#   data/raw/<date>_<experiment_name>/...
+#   data/<date>_<experiment_name>/...
 #   results/<date>_<experiment_name>/<reference_name>/...
 #
 # Per-reference fastq matching, in order of preference:
-#   1. data/raw/<experiment>/<reference_name>/**/*.fastq(.gz)
+#   1. data/<experiment>/<reference_name>/**/*.fastq(.gz)
 #      (e.g. demultiplexed with a sample sheet whose alias = reference_name
 #      -- see scripts/generate_samplesheet.py)
-#   2. Any fastq(.gz) directly under data/raw/<experiment>/ that is NOT
+#   2. Any fastq(.gz) directly under data/<experiment>/ that is NOT
 #      inside another reference-named subfolder (single-reference-per-
-#      experiment case, e.g. data/raw/<experiment>/barcode01/*.fastq.gz)
+#      experiment case, e.g. data/<experiment>/barcode01/*.fastq.gz)
 #
 # Usage:
 #   ./run_pipeline.sh [config.yaml]
@@ -42,7 +42,7 @@ read_cfg() {
 }
 
 REF_ROOT="$SCRIPT_DIR/$(read_cfg references_dir references)"
-DATA_ROOT="$SCRIPT_DIR/$(read_cfg data_dir data/raw)"
+DATA_ROOT="$SCRIPT_DIR/$(read_cfg data_dir data)"
 RESULTS_ROOT="$SCRIPT_DIR/$(read_cfg results_dir results)"
 PRESET="$(read_cfg minimap2_preset map-ont)"
 THREADS="$(read_cfg threads 4)"
@@ -98,7 +98,7 @@ for EXP_DIR in "$REF_ROOT"/*/; do
     # inside a barcodeNN/ folder (those are reserved for number-based
     # matching below). Used as the fallback pool for references that don't
     # match anything else (e.g. a single reference per experiment with
-    # data/raw/<exp>/barcode01/).
+    # data/<exp>/barcode01/).
     SHARED_FASTQ=()
     while IFS= read -r -d '' f; do
         rel="${f#"$DATA_EXP_DIR"/}"
@@ -123,8 +123,8 @@ for EXP_DIR in "$REF_ROOT"/*/; do
         echo "  --- Reference: $REF_FILE -> results/$EXP_NAME/$REF_NAME/ ---"
 
         # Pick the fastq files for this reference, in order of preference:
-        #   1. data/raw/<exp>/<reference_name>/        (exact name match)
-        #   2. data/raw/<exp>/barcodeNN/                (reference filename
+        #   1. data/<exp>/<reference_name>/        (exact name match)
+        #   2. data/<exp>/barcodeNN/                (reference filename
         #      starts with a number "NN_..." that matches barcode number NN)
         #   3. shared pool (single-reference-per-experiment fallback)
         REF_SUBDIR="$DATA_EXP_DIR/$REF_NAME"

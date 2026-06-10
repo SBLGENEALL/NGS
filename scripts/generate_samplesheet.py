@@ -36,7 +36,7 @@ Workflow:
     3. Load sample_sheet.csv into MinKNOW before starting the run
        (Start run -> Sample sheet -> Browse).
     4. Sequence + basecall as usual. Output folders are named by alias.
-    5. Copy the basecalled output into data/raw/<experiment>/ (same
+    5. Copy the basecalled output into data/<experiment>/ (same
        experiment folder name as references/<experiment>/) and run
        run_pipeline.sh — no manual renaming required.
 """
@@ -78,7 +78,7 @@ def main():
                          help="Folder containing one reference FASTA per well (e.g. references/<experiment>/)")
     parser.add_argument("--experiment-id", required=True,
                          help="Experiment name, used as experiment_id (should match the references/<name> "
-                              "and data/raw/<name> folder name)")
+                              "and data/<name> folder name)")
     parser.add_argument("--output", required=True, help="Output sample sheet CSV path")
     parser.add_argument("--kit", default="SQK-NBD114-96",
                          help="Barcoding kit name, written as a comment in the output (default: SQK-NBD114-96)")

@@ -5,7 +5,7 @@ Oxford Nanopore MinION으로 시퀀싱한 결과(fastq)를 reference FASTA(벡�
 
 ## 핵심 아이디어: 폴더명 기반 자동 매칭
 
-`references/`와 `data/raw/` 아래에 **"날짜_실험명" 폴더를 같은 이름으로** 만들어
+`references/`와 `data/` 아래에 **"날짜_실험명" 폴더를 같은 이름으로** 만들어
 두면, 파이프라인이 그 둘을 자동으로 매칭해서 매핑 분석을 진행합니다.
 출력 파일은 항상 **reference FASTA 파일명(실제 벡터/샘플 이름)** 기준으로
 생성되므로, barcode 번호 같은 시퀀서 이름을 분석 후에 따로 바꿔줄 필요가
@@ -18,7 +18,7 @@ nanopore_pipeline/
 ├── references/
 │   └── 20260610_pUC19_test/        <- 실험 폴더 (날짜_실험명)
 │       └── pUC19_insertA.fasta     <- 벡터맵 전체 서열 (이게 "real name")
-├── data/raw/
+├── data/
 │   └── 20260610_pUC19_test/        <- 같은 이름의 폴더
 │       └── barcode01/              <- MinKNOW/Guppy/Dorado 결과 (서브폴더 있어도 됨)
 │           └── *.fastq.gz
@@ -35,7 +35,7 @@ nanopore_pipeline/
 
 - `references/<실험폴더>/` 안에 reference fasta가 **여러 개** 있으면, 각
   reference마다 매칭되는 fastq를 찾아 결과 폴더를 따로 만듭니다.
-- `references/`에는 있지만 `data/raw/`에 같은 이름 폴더가 없으면(또는 반대)
+- `references/`에는 있지만 `data/`에 같은 이름 폴더가 없으면(또는 반대)
   해당 실험은 건너뛰고 경고만 출력합니다.
 
 ### reference ↔ fastq 매칭 우선순위
@@ -43,11 +43,11 @@ nanopore_pipeline/
 각 reference fasta(`<reference_name>.fasta`)에 대해, 다음 순서로 매칭되는
 fastq를 찾습니다:
 
-1. **이름이 같은 폴더**: `data/raw/<실험폴더>/<reference_name>/` 가 있으면
+1. **이름이 같은 폴더**: `data/<실험폴더>/<reference_name>/` 가 있으면
    그 안의 fastq를 사용 (sample sheet의 alias로 demultiplex한 경우).
 2. **번호 매칭**: reference 파일명이 `01_151-NIV-fwdGS_TIR68.fasta`처럼
    **앞자리 숫자**로 시작하면, 그 숫자와 같은 번호의
-   `data/raw/<실험폴더>/barcode01/`(barcode + 같은 숫자) 폴더를 자동으로
+   `data/<실험폴더>/barcode01/`(barcode + 같은 숫자) 폴더를 자동으로
    찾아 사용합니다. 즉 96-well에 reference를 `01_..., 02_..., ... 96_...`
    처럼 번호를 붙여두면, 시퀀싱 결과의 `barcode01`~`barcode96`과 자동으로
    1:1 매핑됩니다 (앞자리 0 유무는 무시: `01`과 `1` 모두 `barcode01`과
@@ -79,7 +79,7 @@ fastq를 찾습니다:
 핵심 요약: **시퀀싱 시작 전에, 각 well(barcode)에 reference 파일명과 동일한
 alias를 매핑한 sample sheet를 MinKNOW에 등록해두면, basecalling/demultiplexing
 결과 폴더가 처음부터 reference 이름으로 생성됩니다.** 그러면 이름을 맞추는
-별도 작업 없이 바로 `data/raw/<실험폴더>/`에 옮기고 `run_pipeline.sh`만
+별도 작업 없이 바로 `data/<실험폴더>/`에 옮기고 `run_pipeline.sh`만
 실행하면 됩니다.
 
 1. `references/<날짜>_<실험명>/`에 96-well 각각에 해당하는 reference fasta를
@@ -99,16 +99,16 @@ alias를 매핑한 sample sheet를 MinKNOW에 등록해두면, basecalling/demul
    sheet -> Browse**에서 불러온 뒤 시퀀싱을 시작한다.
 4. Basecalling/demultiplexing이 끝나면 출력 폴더가 `barcode01` 대신
    sample sheet의 `alias`(= reference 파일명)로 생성된다.
-5. 그 출력 폴더 전체를 `data/raw/<날짜>_<실험명>/` (references와 같은
+5. 그 출력 폴더 전체를 `data/<날짜>_<실험명>/` (references와 같은
    폴더명) 아래로 옮기고 `./run_pipeline.sh`를 실행한다.
 
 > 이미 barcode 번호로 시퀀싱이 끝난 데이터가 있고, 그 실험 폴더 안에
 > reference가 **1개뿐**이라면 이 단계는 건너뛰어도 됩니다 —
-> `data/raw/<날짜>_<실험명>/barcode01/...` 형태 그대로 두면
+> `data/<날짜>_<실험명>/barcode01/...` 형태 그대로 두면
 > `run_pipeline.sh`가 그 fastq를 해당 reference 1개에 매핑합니다.
 > reference가 **여러 개**인 실험이라면, 각 reference의 fastq가 어느
 > 것인지 구분이 필요하므로 위 sample sheet 방식(또는 수동으로
-> `data/raw/<실험폴더>/<reference이름>/`에 해당 fastq를 넣는 방식)을
+> `data/<실험폴더>/<reference이름>/`에 해당 fastq를 넣는 방식)을
 > 사용해야 합니다.
 
 ## 사전 준비
@@ -118,7 +118,7 @@ alias를 매핑한 sample sheet를 MinKNOW에 등록해두면, basecalling/demul
    conda install -c bioconda -c conda-forge minimap2 samtools bcftools nanofilt
    ```
 2. `references/<날짜>_<실험명>/`에 벡터맵 fasta 파일을 넣는다.
-3. `data/raw/<날짜>_<실험명>/`에 (위와 동일한 폴더명으로) MinKNOW/Guppy/Dorado의
+3. `data/<날짜>_<실험명>/`에 (위와 동일한 폴더명으로) MinKNOW/Guppy/Dorado의
    barcode별(또는 alias별) fastq.gz 폴더를 넣는다.
 4. 필요하면 `config.yaml`에서 minimap2 preset, threads, QC 필터링 기준,
    variant caller(`bcftools` 또는 `medaka`)를 조정한다.
@@ -130,6 +130,6 @@ cd nanopore_pipeline
 ./run_pipeline.sh
 ```
 
-`references/`와 `data/raw/` 아래의 모든 실험 폴더를 자동으로 스캔해서,
+`references/`와 `data/` 아래의 모든 실험 폴더를 자동으로 스캔해서,
 이름이 일치하는 쌍에 대해서만 매핑을 수행합니다. 새 실험을 추가할 때는
 두 폴더 아래에 같은 이름의 폴더만 만들어주면 됩니다.

@@ -5,7 +5,7 @@
 # SAME folder name exists under both references_dir and data_dir).
 #
 # references/<date>_<experiment_name>/<reference_name>.fasta
-# data/raw/<date>_<experiment_name>/...   (fastq.gz files, optionally inside
+# data/<date>_<experiment_name>/...       (fastq.gz files, optionally inside
 #                                           barcodeXX/ subfolders)
 #
 # -> results/<date>_<experiment_name>/<reference_name>/...
@@ -14,7 +14,7 @@
 # name), not the barcode ID, so no manual renaming is needed afterwards.
 
 references_dir: references
-data_dir: data/raw
+data_dir: data
 results_dir: results
 
 # minimap2 mapping preset for ONT reads
