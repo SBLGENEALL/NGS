@@ -1,0 +1,33 @@
+# Nanopore (MinION) reference-mapping pipeline configuration
+
+# Each "experiment" is a folder named e.g. <date>_<experiment_name>
+# (you choose the naming convention, the only requirement is that the
+# SAME folder name exists under both references_dir and data_dir).
+#
+# references/<date>_<experiment_name>/<reference_name>.fasta
+# data/raw/<date>_<experiment_name>/...   (fastq.gz files, optionally inside
+#                                           barcodeXX/ subfolders)
+#
+# -> results/<date>_<experiment_name>/<reference_name>/...
+#
+# All output files are named after <reference_name> (the real vector/sample
+# name), not the barcode ID, so no manual renaming is needed afterwards.
+
+references_dir: references
+data_dir: data/raw
+results_dir: results
+
+# minimap2 mapping preset for ONT reads
+minimap2_preset: map-ont
+
+# Number of threads to use for minimap2 / samtools
+threads: 4
+
+# Minimum read length kept during QC filtering (NanoFilt), 0 disables filtering
+min_read_length: 0
+
+# Minimum mean read quality kept during QC filtering (NanoFilt), 0 disables filtering
+min_read_quality: 0
+
+# Variant calling backend: "bcftools" (default, always available) or "medaka"
+variant_caller: bcftools
