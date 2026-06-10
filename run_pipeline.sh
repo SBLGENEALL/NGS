@@ -51,6 +51,8 @@ read_cfg() {
     local key="$1" default="$2"
     local val
     val=$(grep -E "^${key}:" "$CONFIG" | head -n1 | sed -E "s/^${key}:[[:space:]]*//; s/[[:space:]]*(#.*)?$//")
+    # Strip surrounding quotes, e.g. pilon_jar: "/path/to/pilon.jar"
+    val=$(sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/' <<< "$val")
     if [[ -z "$val" ]]; then echo "$default"; else echo "$val"; fi
 }
 
