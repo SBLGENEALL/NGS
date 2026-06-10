@@ -33,13 +33,28 @@ nanopore_pipeline/
             └── pUC19_insertA_report.md
 ```
 
-- `references/<실험폴더>/` 안에 reference fasta가 **여러 개** 있으면, 그
-  실험 폴더의 fastq 전체를 각 reference에 대해 모두 매핑해서 reference별로
-  결과 폴더를 따로 만듭니다.
-- `data/raw/<실험폴더>/` 안의 fastq.gz는 barcode 서브폴더에 있든 바로 있든
-  상관없이 재귀적으로 모두 찾아서 합칩니다.
+- `references/<실험폴더>/` 안에 reference fasta가 **여러 개** 있으면, 각
+  reference마다 매칭되는 fastq를 찾아 결과 폴더를 따로 만듭니다.
 - `references/`에는 있지만 `data/raw/`에 같은 이름 폴더가 없으면(또는 반대)
   해당 실험은 건너뛰고 경고만 출력합니다.
+
+### reference ↔ fastq 매칭 우선순위
+
+각 reference fasta(`<reference_name>.fasta`)에 대해, 다음 순서로 매칭되는
+fastq를 찾습니다:
+
+1. **이름이 같은 폴더**: `data/raw/<실험폴더>/<reference_name>/` 가 있으면
+   그 안의 fastq를 사용 (sample sheet의 alias로 demultiplex한 경우).
+2. **번호 매칭**: reference 파일명이 `01_151-NIV-fwdGS_TIR68.fasta`처럼
+   **앞자리 숫자**로 시작하면, 그 숫자와 같은 번호의
+   `data/raw/<실험폴더>/barcode01/`(barcode + 같은 숫자) 폴더를 자동으로
+   찾아 사용합니다. 즉 96-well에 reference를 `01_..., 02_..., ... 96_...`
+   처럼 번호를 붙여두면, 시퀀싱 결과의 `barcode01`~`barcode96`과 자동으로
+   1:1 매핑됩니다 (앞자리 0 유무는 무시: `01`과 `1` 모두 `barcode01`과
+   매칭).
+3. **공유 폴백**: 위 두 가지로 못 찾으면, 실험 폴더 전체의 fastq(모든
+   reference/barcode 서브폴더 제외)를 사용합니다 — reference가 1개뿐인
+   실험에 적합합니다.
 
 ## 레퍼런스 FASTA 관련 Q&A
 

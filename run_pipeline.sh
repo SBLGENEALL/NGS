@@ -94,9 +94,11 @@ for EXP_DIR in "$REF_ROOT"/*/; do
     mkdir -p "$EXP_RESULTS_DIR"
 
     # Fastq files directly under DATA_EXP_DIR that are NOT inside a
-    # subfolder named after one of this experiment's references. Used as
-    # the fallback pool for references that don't have their own subfolder
-    # (e.g. a single reference per experiment with data/raw/<exp>/barcode01/).
+    # subfolder named after one of this experiment's references, and not
+    # inside a barcodeNN/ folder (those are reserved for number-based
+    # matching below). Used as the fallback pool for references that don't
+    # match anything else (e.g. a single reference per experiment with
+    # data/raw/<exp>/barcode01/).
     SHARED_FASTQ=()
     while IFS= read -r -d '' f; do
         rel="${f#"$DATA_EXP_DIR"/}"
@@ -105,7 +107,9 @@ for EXP_DIR in "$REF_ROOT"/*/; do
         for r in "${REF_NAMES[@]}"; do
             if [[ "$top" == "$r" ]]; then is_ref_dir=true; break; fi
         done
-        if [[ "$is_ref_dir" == false ]]; then SHARED_FASTQ+=("$f"); fi
+        if [[ "$is_ref_dir" == false && ! "$top" =~ ^[Bb]arcode0*[0-9]+$ ]]; then
+            SHARED_FASTQ+=("$f")
+        fi
     done < <(find "$DATA_EXP_DIR" -type f \( -name "*.fastq.gz" -o -name "*.fastq" \) -print0)
 
     # 1-5. Map against every reference fasta found in this experiment folder
@@ -118,14 +122,35 @@ for EXP_DIR in "$REF_ROOT"/*/; do
         echo ""
         echo "  --- Reference: $REF_FILE -> results/$EXP_NAME/$REF_NAME/ ---"
 
-        # Pick the fastq files for this reference: a same-named subfolder
-        # takes priority over the shared pool.
+        # Pick the fastq files for this reference, in order of preference:
+        #   1. data/raw/<exp>/<reference_name>/        (exact name match)
+        #   2. data/raw/<exp>/barcodeNN/                (reference filename
+        #      starts with a number "NN_..." that matches barcode number NN)
+        #   3. shared pool (single-reference-per-experiment fallback)
         REF_SUBDIR="$DATA_EXP_DIR/$REF_NAME"
         FASTQ_FILES=()
         if [[ -d "$REF_SUBDIR" ]]; then
             while IFS= read -r -d '' f; do FASTQ_FILES+=("$f"); done \
                 < <(find "$REF_SUBDIR" -type f \( -name "*.fastq.gz" -o -name "*.fastq" \) -print0)
             echo "  Reads: ${#FASTQ_FILES[@]} file(s) from $(basename "$REF_SUBDIR")/ (matched by name)"
+        elif [[ "$REF_NAME" =~ ^0*([0-9]+)[^0-9] ]]; then
+            REF_NUM="${BASH_REMATCH[1]}"
+            BARCODE_SUBDIR=""
+            for d in "$DATA_EXP_DIR"/*/; do
+                dname="$(basename "$d")"
+                if [[ "$dname" =~ ^[Bb]arcode0*([0-9]+)$ && "${BASH_REMATCH[1]}" == "$REF_NUM" ]]; then
+                    BARCODE_SUBDIR="$d"
+                    break
+                fi
+            done
+            if [[ -n "$BARCODE_SUBDIR" ]]; then
+                while IFS= read -r -d '' f; do FASTQ_FILES+=("$f"); done \
+                    < <(find "$BARCODE_SUBDIR" -type f \( -name "*.fastq.gz" -o -name "*.fastq" \) -print0)
+                echo "  Reads: ${#FASTQ_FILES[@]} file(s) from $(basename "$BARCODE_SUBDIR")/ (matched by barcode number $REF_NUM)"
+            else
+                FASTQ_FILES=("${SHARED_FASTQ[@]}")
+                echo "  Reads: ${#FASTQ_FILES[@]} file(s) from $EXP_NAME/ (shared, single-reference layout)"
+            fi
         else
             FASTQ_FILES=("${SHARED_FASTQ[@]}")
             echo "  Reads: ${#FASTQ_FILES[@]} file(s) from $EXP_NAME/ (shared, single-reference layout)"
