@@ -64,12 +64,12 @@ MIN_QUAL="$(read_cfg min_read_quality 0)"
 VARIANT_CALLER="$(read_cfg variant_caller bcftools)"
 PARALLEL_JOBS="$(read_cfg parallel_jobs 1)"
 
-# bcftools >= 1.12 supports a "--platform ont" preset for mpileup that tunes
-# indel/SNP calling for ONT's error profile (much fewer false-positive
-# indels in homopolymer runs than the Illumina-tuned defaults).
+# bcftools mpileup supports a "-X ont" config preset that tunes indel/SNP
+# calling parameters for ONT's error profile (much fewer false-positive
+# indels in homopolymer runs than the default/Illumina-tuned settings).
 BCFTOOLS_PLATFORM_OPT=""
-if command -v bcftools >/dev/null 2>&1 && bcftools mpileup --help 2>&1 | grep -q -- '--platform'; then
-    BCFTOOLS_PLATFORM_OPT="--platform ont"
+if command -v bcftools >/dev/null 2>&1 && bcftools mpileup 2>&1 | grep -qE -- '-X|--config'; then
+    BCFTOOLS_PLATFORM_OPT="-X ont"
 fi
 
 echo "==================================================================="
