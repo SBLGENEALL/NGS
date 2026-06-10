@@ -56,6 +56,14 @@ MIN_LEN="$(read_cfg min_read_length 0)"
 MIN_QUAL="$(read_cfg min_read_quality 0)"
 VARIANT_CALLER="$(read_cfg variant_caller bcftools)"
 
+# bcftools >= 1.12 supports a "--platform ont" preset for mpileup that tunes
+# indel/SNP calling for ONT's error profile (much fewer false-positive
+# indels in homopolymer runs than the Illumina-tuned defaults).
+BCFTOOLS_PLATFORM_OPT=""
+if command -v bcftools >/dev/null 2>&1 && bcftools mpileup --help 2>&1 | grep -q -- '--platform'; then
+    BCFTOOLS_PLATFORM_OPT="--platform ont"
+fi
+
 echo "==================================================================="
 echo " Nanopore reference-mapping pipeline"
 echo "   references  : $REF_ROOT"
@@ -246,7 +254,7 @@ for EXP_DIR in "$REF_ROOT"/*/; do
             cp "$SAMPLE_DIR/medaka/medaka.annotated.vcf" "$SAMPLE_DIR/${REF_NAME}.vcf" 2>/dev/null || true
             bgzip -f "$SAMPLE_DIR/${REF_NAME}.vcf"
         else
-            bcftools mpileup -f "$REF_PATH" "$SORTED_BAM" 2>/dev/null \
+            bcftools mpileup $BCFTOOLS_PLATFORM_OPT -f "$REF_PATH" "$SORTED_BAM" 2>/dev/null \
                 | bcftools call -mv -Oz -o "$VCF"
             bcftools index -f "$VCF"
         fi

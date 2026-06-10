@@ -185,3 +185,16 @@ python scripts/summarize_variants.py --results results --output results/summary_
 `bcftools view`로 원본 VCF를 직접 열어 QUAL/DP를 확인하거나, IGV로
 `.sorted.bam`을 열어 해당 위치의 read를 직접 봐서 진짜 변이인지
 판단하는 것이 좋습니다.
+
+### ONT 전용 변이 호출 설정 (`--platform ont`)
+
+`run_pipeline.sh`는 bcftools 1.12 이상이면 `bcftools mpileup`에 자동으로
+`--platform ont` 옵션을 적용합니다. 이 옵션은 ONT 리드의 indel 에러
+프로파일(특히 homopolymer 구간)을 고려해서 indel/SNP 호출 파라미터를
+조정해주므로, Illumina 기준 기본값보다 false-positive 변이가 훨씬
+줄어듭니다.
+
+기존 결과에 다시 적용하려면 그냥 `./run_pipeline.sh`를 다시 실행하면
+됩니다 (read 병합 단계는 결과가 이미 있으면 건너뛰고, mapping/consensus/
+variant calling은 새 옵션으로 다시 생성됩니다). 그 후
+`summarize_variants.py`도 다시 실행해서 요약을 갱신하세요.
