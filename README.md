@@ -144,3 +144,24 @@ cd nanopore_pipeline
 `references/`와 `data/` 아래의 모든 실험 폴더를 자동으로 스캔해서,
 이름이 일치하는 쌍에 대해서만 매핑을 수행합니다. 새 실험을 추가할 때는
 두 폴더 아래에 같은 이름의 폴더만 만들어주면 됩니다.
+
+## 전체 결과 요약 (변이 한눈에 보기)
+
+샘플이 많을 때 `*_report.md`/`*.vcf.gz`를 하나씩 열어보지 않고, 모든
+실험/샘플의 매핑률·평균 depth·변이(point mutation/insertion/deletion)를
+표 하나로 정리할 수 있습니다:
+
+```bash
+python scripts/summarize_variants.py --results results --output results/summary_report.md
+```
+
+`results/summary_report.md`에 다음과 같은 표가 생성됩니다:
+
+| Experiment | Sample | Mapping | Mean depth | SNP | Ins | Del | Variants |
+|---|---|---|---|---|---|---|---|
+| 260609_TPase | R34.141-DAR-revSPG23_TIR90 | 99.1% (...) | 120.34x | 0 | 0 | 0 | None |
+| 260609_TPase | 02_xxx | 98.4% (...) | 87.10x | 1 | 0 | 1 | SNP @1523 G>A; del @3010 AT>A |
+
+- `Variants` 열이 `None`이면 레퍼런스 대비 호출된 변이가 없는 샘플입니다.
+- CSV로 받고 싶으면 `--output results/summary_report.csv`처럼 확장자를
+  `.csv`로 지정하면 됩니다 (Excel에서 바로 열어서 정렬/필터 가능).
