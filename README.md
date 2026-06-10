@@ -43,18 +43,29 @@ nanopore_pipeline/
 각 reference fasta(`<reference_name>.fasta`)에 대해, 다음 순서로 매칭되는
 fastq를 찾습니다:
 
-1. **이름이 같은 폴더**: `data/<실험폴더>/<reference_name>/` 가 있으면
+1. **파일명이 같은 파일**: `data/<실험폴더>/` 아래(하위 폴더 포함) 어디에든
+   `<reference_name>.*` (예: `R34.141-DAR-revSPG23_TIR90.gz`,
+   `R34.141-DAR-revSPG23_TIR90.fastq.gz` 등 확장자 무관)인 파일이 있으면
+   그 파일을 사용합니다. reference 파일명과 데이터 파일명(확장자 제외)이
+   완전히 동일한 경우에 적용됩니다.
+2. **이름이 같은 폴더**: `data/<실험폴더>/<reference_name>/` 가 있으면
    그 안의 fastq를 사용 (sample sheet의 alias로 demultiplex한 경우).
-2. **번호 매칭**: reference 파일명이 `01_151-NIV-fwdGS_TIR68.fasta`처럼
+3. **번호 매칭**: reference 파일명이 `01_151-NIV-fwdGS_TIR68.fasta`처럼
    **앞자리 숫자**로 시작하면, 그 숫자와 같은 번호의
    `data/<실험폴더>/barcode01/`(barcode + 같은 숫자) 폴더를 자동으로
    찾아 사용합니다. 즉 96-well에 reference를 `01_..., 02_..., ... 96_...`
    처럼 번호를 붙여두면, 시퀀싱 결과의 `barcode01`~`barcode96`과 자동으로
    1:1 매핑됩니다 (앞자리 0 유무는 무시: `01`과 `1` 모두 `barcode01`과
    매칭).
-3. **공유 폴백**: 위 두 가지로 못 찾으면, 실험 폴더 전체의 fastq(모든
-   reference/barcode 서브폴더 제외)를 사용합니다 — reference가 1개뿐인
-   실험에 적합합니다.
+4. **공유 폴백**: 위 세 가지로 못 찾으면, 실험 폴더 전체의 fastq(모든
+   reference/barcode 서브폴더 및 위에서 매칭된 파일 제외)를 사용합니다 —
+   reference가 1개뿐인 실험에 적합합니다.
+
+> 데이터 파일은 `.fastq`, `.fastq.gz`, `.fq`, `.fq.gz` 뿐 아니라 확장자가
+> `.gz`만 있는 경우(예: `R34.141-DAR-revSPG23_TIR90.gz`)도 인식합니다.
+> reference 파일에 `.fa.amb`, `.fa.ann`, `.fa.bwt`, `.fa.pac`, `.fa.sa`
+> 같은 BWA 인덱스 파일이 같이 있어도 무시되며 (`.fasta`/`.fa`/`.fna`만
+> reference로 사용), 분석에 영향을 주지 않습니다.
 
 ## 레퍼런스 FASTA 관련 Q&A
 

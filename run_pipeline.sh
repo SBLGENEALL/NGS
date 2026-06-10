@@ -15,12 +15,18 @@
 #   results/<date>_<experiment_name>/<reference_name>/...
 #
 # Per-reference fastq matching, in order of preference:
-#   1. data/<experiment>/<reference_name>/**/*.fastq(.gz)
+#   1. data/<experiment>/**/<reference_name>.<ext>  (exact filename match,
+#      ext can be .fastq(.gz), .fq(.gz) or plain .gz, e.g.
+#      R34.141-DAR-revSPG23_TIR90.fa <-> R34.141-DAR-revSPG23_TIR90.gz)
+#   2. data/<experiment>/<reference_name>/**/*.fastq(.gz)
 #      (e.g. demultiplexed with a sample sheet whose alias = reference_name
 #      -- see scripts/generate_samplesheet.py)
-#   2. Any fastq(.gz) directly under data/<experiment>/ that is NOT
-#      inside another reference-named subfolder (single-reference-per-
-#      experiment case, e.g. data/<experiment>/barcode01/*.fastq.gz)
+#   3. data/<experiment>/barcodeNN/  (reference filename starts with a
+#      number NN that matches barcode number NN)
+#   4. Any fastq(.gz) directly under data/<experiment>/ that is NOT
+#      inside another reference-named subfolder/file or a barcodeNN/
+#      folder (single-reference-per-experiment case, e.g.
+#      data/<experiment>/barcode01/*.fastq.gz)
 #
 # Usage:
 #   ./run_pipeline.sh [config.yaml]
@@ -93,24 +99,41 @@ for EXP_DIR in "$REF_ROOT"/*/; do
     EXP_RESULTS_DIR="$RESULTS_ROOT/$EXP_NAME"
     mkdir -p "$EXP_RESULTS_DIR"
 
+    # Read-file patterns: ONT exports are sometimes named *.fastq.gz / *.fastq,
+    # but also just *.fq(.gz) or even plain *.gz with no "fastq" in the name.
+    READ_FIND_EXPR=( -type f \( -iname "*.fastq.gz" -o -iname "*.fastq" -o -iname "*.fq.gz" -o -iname "*.fq" -o -iname "*.gz" \) )
+
+    # Strip read-file extensions to compare against a reference name
+    # (handles "<name>.gz", "<name>.fastq.gz", "<name>.fq", ...).
+    strip_read_ext() {
+        local n="$1"
+        n="${n%.gz}"
+        n="${n%.fastq}"
+        n="${n%.fq}"
+        echo "$n"
+    }
+
     # Fastq files directly under DATA_EXP_DIR that are NOT inside a
-    # subfolder named after one of this experiment's references, and not
-    # inside a barcodeNN/ folder (those are reserved for number-based
-    # matching below). Used as the fallback pool for references that don't
-    # match anything else (e.g. a single reference per experiment with
-    # data/<exp>/barcode01/).
+    # subfolder named after one of this experiment's references, not inside
+    # a barcodeNN/ folder (reserved for number-based matching), and whose
+    # name doesn't exactly match one of this experiment's reference names
+    # (reserved for exact-file matching). Used as the fallback pool for
+    # references that don't match anything else (e.g. a single reference
+    # per experiment with data/<exp>/barcode01/).
     SHARED_FASTQ=()
     while IFS= read -r -d '' f; do
         rel="${f#"$DATA_EXP_DIR"/}"
         top="${rel%%/*}"
         is_ref_dir=false
+        is_ref_file=false
         for r in "${REF_NAMES[@]}"; do
-            if [[ "$top" == "$r" ]]; then is_ref_dir=true; break; fi
+            if [[ "$top" == "$r" ]]; then is_ref_dir=true; fi
+            if [[ "$(strip_read_ext "$(basename "$f")")" == "$r" ]]; then is_ref_file=true; fi
         done
-        if [[ "$is_ref_dir" == false && ! "$top" =~ ^[Bb]arcode0*[0-9]+$ ]]; then
+        if [[ "$is_ref_dir" == false && "$is_ref_file" == false && ! "$top" =~ ^[Bb]arcode0*[0-9]+$ ]]; then
             SHARED_FASTQ+=("$f")
         fi
-    done < <(find "$DATA_EXP_DIR" -type f \( -name "*.fastq.gz" -o -name "*.fastq" \) -print0)
+    done < <(find "$DATA_EXP_DIR" "${READ_FIND_EXPR[@]}" -print0)
 
     # 1-5. Map against every reference fasta found in this experiment folder
     for REF_PATH in "${REF_FILES[@]}"; do
@@ -123,15 +146,25 @@ for EXP_DIR in "$REF_ROOT"/*/; do
         echo "  --- Reference: $REF_FILE -> results/$EXP_NAME/$REF_NAME/ ---"
 
         # Pick the fastq files for this reference, in order of preference:
-        #   1. data/<exp>/<reference_name>/        (exact name match)
-        #   2. data/<exp>/barcodeNN/                (reference filename
+        #   1. data/<exp>/**/<reference_name>.<ext>  (exact filename match,
+        #      e.g. R34.141-DAR-revSPG23_TIR90.fa <-> R34.141-DAR-revSPG23_TIR90.gz)
+        #   2. data/<exp>/<reference_name>/          (exact name folder match)
+        #   3. data/<exp>/barcodeNN/                  (reference filename
         #      starts with a number "NN_..." that matches barcode number NN)
-        #   3. shared pool (single-reference-per-experiment fallback)
-        REF_SUBDIR="$DATA_EXP_DIR/$REF_NAME"
+        #   4. shared pool (single-reference-per-experiment fallback)
         FASTQ_FILES=()
-        if [[ -d "$REF_SUBDIR" ]]; then
+        while IFS= read -r -d '' f; do
+            if [[ "$(strip_read_ext "$(basename "$f")")" == "$REF_NAME" ]]; then
+                FASTQ_FILES+=("$f")
+            fi
+        done < <(find "$DATA_EXP_DIR" "${READ_FIND_EXPR[@]}" -print0)
+
+        REF_SUBDIR="$DATA_EXP_DIR/$REF_NAME"
+        if [[ ${#FASTQ_FILES[@]} -gt 0 ]]; then
+            echo "  Reads: ${#FASTQ_FILES[@]} file(s) matched by filename '$REF_NAME.*'"
+        elif [[ -d "$REF_SUBDIR" ]]; then
             while IFS= read -r -d '' f; do FASTQ_FILES+=("$f"); done \
-                < <(find "$REF_SUBDIR" -type f \( -name "*.fastq.gz" -o -name "*.fastq" \) -print0)
+                < <(find "$REF_SUBDIR" "${READ_FIND_EXPR[@]}" -print0)
             echo "  Reads: ${#FASTQ_FILES[@]} file(s) from $(basename "$REF_SUBDIR")/ (matched by name)"
         elif [[ "$REF_NAME" =~ ^0*([0-9]+)[^0-9] ]]; then
             REF_NUM="${BASH_REMATCH[1]}"
@@ -145,7 +178,7 @@ for EXP_DIR in "$REF_ROOT"/*/; do
             done
             if [[ -n "$BARCODE_SUBDIR" ]]; then
                 while IFS= read -r -d '' f; do FASTQ_FILES+=("$f"); done \
-                    < <(find "$BARCODE_SUBDIR" -type f \( -name "*.fastq.gz" -o -name "*.fastq" \) -print0)
+                    < <(find "$BARCODE_SUBDIR" "${READ_FIND_EXPR[@]}" -print0)
                 echo "  Reads: ${#FASTQ_FILES[@]} file(s) from $(basename "$BARCODE_SUBDIR")/ (matched by barcode number $REF_NUM)"
             else
                 FASTQ_FILES=("${SHARED_FASTQ[@]}")
