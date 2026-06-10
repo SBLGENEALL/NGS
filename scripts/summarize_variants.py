@@ -13,6 +13,11 @@ Usage:
 
     # CSV instead of markdown
     python scripts/summarize_variants.py --results results --output results/summary_report.csv
+
+    # Filter out low-confidence calls (common with ONT homopolymer indel
+    # noise from bcftools default settings)
+    python scripts/summarize_variants.py --results results --output results/summary_report.md \
+        --min-qual 20 --min-depth 10
 """
 import argparse
 import csv
@@ -21,17 +26,31 @@ import os
 import re
 
 
-def read_vcf_variants(vcf_path):
-    """Return a list of (pos, type, ref, alt) for each ALT allele in the VCF."""
+def read_vcf_variants(vcf_path, min_qual=0.0, min_depth=0):
+    """Return a list of (pos, type, ref, alt) for each ALT allele in the VCF
+    that passes the QUAL/DP thresholds."""
     variants = []
     with gzip.open(vcf_path, "rt") as f:
         for line in f:
             if line.startswith("#"):
                 continue
             cols = line.rstrip("\n").split("\t")
-            if len(cols) < 5:
+            if len(cols) < 8:
                 continue
-            pos, ref, alt_field = cols[1], cols[3], cols[4]
+            pos, ref, alt_field, qual_str, info = cols[1], cols[3], cols[4], cols[5], cols[7]
+
+            try:
+                qual = float(qual_str)
+            except ValueError:
+                qual = 0.0
+            if qual < min_qual:
+                continue
+
+            dp_match = re.search(r"(?:^|;)DP=(\d+)", info)
+            dp = int(dp_match.group(1)) if dp_match else 0
+            if dp < min_depth:
+                continue
+
             for alt in alt_field.split(","):
                 if alt == "." or alt == "":
                     continue
@@ -77,6 +96,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--results", default="results", help="Results root directory (default: results)")
     parser.add_argument("--output", required=True, help="Output summary file (.md or .csv)")
+    parser.add_argument("--min-qual", type=float, default=0.0,
+                         help="Minimum VCF QUAL to count a variant (default: 0, no filter)")
+    parser.add_argument("--min-depth", type=int, default=0,
+                         help="Minimum read depth (INFO/DP) to count a variant (default: 0, no filter)")
     args = parser.parse_args()
 
     rows = []
@@ -94,7 +117,7 @@ def main():
                 continue
 
             mapping, depth = read_report_fields(report_path)
-            variants = read_vcf_variants(vcf_path)
+            variants = read_vcf_variants(vcf_path, min_qual=args.min_qual, min_depth=args.min_depth)
             n_snp = sum(1 for v in variants if v[1] == "point mutation")
             n_ins = sum(1 for v in variants if v[1] == "insertion")
             n_del = sum(1 for v in variants if v[1] == "deletion")

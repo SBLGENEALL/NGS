@@ -165,3 +165,23 @@ python scripts/summarize_variants.py --results results --output results/summary_
 - `Variants` 열이 `None`이면 레퍼런스 대비 호출된 변이가 없는 샘플입니다.
 - CSV로 받고 싶으면 `--output results/summary_report.csv`처럼 확장자를
   `.csv`로 지정하면 됩니다 (Excel에서 바로 열어서 정렬/필터 가능).
+
+### 노이즈성 변이 필터링 (`--min-qual`, `--min-depth`)
+
+ONT 데이터는 에러율이 높아서, 특히 homopolymer(같은 염기 반복) 구간에서
+`bcftools` 기본 설정으로는 실제로는 시퀀싱 에러인 indel/SNP까지 변이로
+잡히는 경우가 많습니다. `QUAL`(변이 신뢰도)과 `DP`(depth)에 최소 기준을
+줘서 신뢰도 낮은 변이를 제외할 수 있습니다:
+
+```bash
+python scripts/summarize_variants.py --results results --output results/summary_report.md \
+    --min-qual 20 --min-depth 10
+```
+
+- `--min-qual 20`: VCF의 QUAL 컬럼이 20 미만인 변이는 제외
+- `--min-depth 10`: 해당 위치의 read depth(`INFO/DP`)가 10 미만인 변이는 제외
+
+기준값은 데이터 특성에 맞게 조정하세요. 필터링 후에도 의심되는 변이는
+`bcftools view`로 원본 VCF를 직접 열어 QUAL/DP를 확인하거나, IGV로
+`.sorted.bam`을 열어 해당 위치의 read를 직접 봐서 진짜 변이인지
+판단하는 것이 좋습니다.
