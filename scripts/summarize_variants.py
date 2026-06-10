@@ -9,15 +9,15 @@ short description of every variant found (point mutation / insertion /
 deletion), so you don't have to open each VCF individually.
 
 Usage:
-    python scripts/summarize_variants.py --results results --output results/summary_report.md
+    # Default: writes results/summary_report.csv
+    python scripts/summarize_variants.py
 
-    # CSV instead of markdown
-    python scripts/summarize_variants.py --results results --output results/summary_report.csv
+    # Markdown instead of CSV
+    python scripts/summarize_variants.py --output results/summary_report.md
 
     # Filter out low-confidence calls (common with ONT homopolymer indel
     # noise from bcftools default settings)
-    python scripts/summarize_variants.py --results results --output results/summary_report.md \
-        --min-qual 20 --min-depth 10
+    python scripts/summarize_variants.py --min-qual 20 --min-depth 10
 """
 import argparse
 import csv
@@ -134,7 +134,8 @@ def format_variants(variants):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--results", default="results", help="Results root directory (default: results)")
-    parser.add_argument("--output", required=True, help="Output summary file (.md or .csv)")
+    parser.add_argument("--output", default="results/summary_report.csv",
+                         help="Output summary file (.md or .csv); default: results/summary_report.csv")
     parser.add_argument("--min-qual", type=float, default=0.0,
                          help="Minimum VCF QUAL to count a variant (default: 0, no filter)")
     parser.add_argument("--min-depth", type=int, default=0,

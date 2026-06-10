@@ -175,10 +175,13 @@ parallel_jobs: 32
 표 하나로 정리할 수 있습니다:
 
 ```bash
-python scripts/summarize_variants.py --results results --output results/summary_report.md
+python scripts/summarize_variants.py
 ```
 
-`results/summary_report.md`에 다음과 같은 표가 생성됩니다:
+별도 옵션 없이 실행하면 기본값으로 `results/summary_report.csv`가
+생성됩니다 (Excel에서 바로 열어서 정렬/필터 가능). Markdown 표로 받고
+싶으면 `--output results/summary_report.md`처럼 확장자를 `.md`로
+지정하세요. 예시(Markdown):
 
 | Experiment | Sample | Mapping | Mean depth | Method | SNP | Ins | Del | Variants |
 |---|---|---|---|---|---|---|---|---|
@@ -192,8 +195,6 @@ python scripts/summarize_variants.py --results results --output results/summary_
 나열되기 때문입니다).
 
 - `Variants` 열이 `None`이면 레퍼런스 대비 호출된 변이가 없는 샘플입니다.
-- CSV로 받고 싶으면 `--output results/summary_report.csv`처럼 확장자를
-  `.csv`로 지정하면 됩니다 (Excel에서 바로 열어서 정렬/필터 가능).
 
 ### 노이즈성 변이 필터링 (`--min-qual`, `--min-depth`)
 
@@ -203,8 +204,7 @@ ONT 데이터는 에러율이 높아서, 특히 homopolymer(같은 염기 반복
 줘서 신뢰도 낮은 변이를 제외할 수 있습니다:
 
 ```bash
-python scripts/summarize_variants.py --results results --output results/summary_report.md \
-    --min-qual 20 --min-depth 10
+python scripts/summarize_variants.py --min-qual 20 --min-depth 10
 ```
 
 - `--min-qual 20`: VCF의 QUAL 컬럼이 20 미만인 변이는 제외
