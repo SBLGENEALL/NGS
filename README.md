@@ -242,7 +242,7 @@ variant calling은 새 옵션으로 다시 생성됩니다). 그 후
 
 ```yaml
 variant_caller: pilon
-pilon_jar: /home/mect/install_file/usbmnt/17.pilon/pilon-1.24.jar
+pilon_jar: /home/mcet/install_file/usbmnt/17.pilon/pilon-1.24.jar
 pilon_mem: 16G
 ```
 

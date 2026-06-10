@@ -41,7 +41,7 @@ variant_caller: bcftools
 
 # Required if variant_caller: pilon. Path to pilon-*.jar (absolute path,
 # or relative to this config file's directory).
-# e.g. pilon_jar: /home/mect/install_file/usbmnt/17.pilon/pilon-1.24.jar
+# e.g. pilon_jar: /home/mcet/install_file/usbmnt/17.pilon/pilon-1.24.jar
 pilon_jar: ""
 
 # Java heap size for pilon (-Xmx)
