@@ -12,7 +12,13 @@
 # Layout:
 #   references/<date>_<experiment_name>/<reference_name>.fasta
 #   data/<date>_<experiment_name>/...
-#   results/<date>_<experiment_name>/<reference_name>/...
+#   results/<date>_<experiment_name>_<run_YYMMDD_HHMM>/<reference_name>/...
+#
+# On startup, the script lists every experiment folder that exists under
+# both references_dir and data_dir and asks which one(s) to run (Enter =
+# all). Each run's results go into a results/ folder suffixed with the
+# date and time the pipeline was started, so repeated runs don't overwrite
+# each other.
 #
 # Per-reference fastq matching, in order of preference:
 #   1. data/<experiment>/**/<reference_name>.<ext>  (exact filename match,
@@ -73,6 +79,10 @@ if [[ -n "$PILON_JAR" && "$PILON_JAR" != /* ]]; then
 fi
 PILON_MEM="$(read_cfg pilon_mem 16G)"
 
+# Timestamp for this run, used to suffix the results folder so repeated
+# runs don't overwrite each other, e.g. results/260609_TPase_260610_1810/
+RUN_TIMESTAMP="$(date +%y%m%d_%H%M)"
+
 # bcftools mpileup supports a "-X ont" config preset that tunes indel/SNP
 # calling parameters for ONT's error profile (much fewer false-positive
 # indels in homopolymer runs than the default/Illumina-tuned settings).
@@ -94,6 +104,60 @@ mkdir -p "$RESULTS_ROOT"
 shopt -s nullglob
 
 # ---------------------------------------------------------------------------
+# Interactive experiment selection: list every folder that exists under
+# BOTH references_dir and data_dir, and ask which one(s) to run.
+# ---------------------------------------------------------------------------
+AVAILABLE_EXPS=()
+for EXP_DIR in "$REF_ROOT"/*/; do
+    EXP_NAME="$(basename "$EXP_DIR")"
+    if [[ -d "$DATA_ROOT/$EXP_NAME" ]]; then
+        AVAILABLE_EXPS+=("$EXP_NAME")
+    fi
+done
+
+if [[ ${#AVAILABLE_EXPS[@]} -eq 0 ]]; then
+    echo "No experiments found (need a folder with the same name under both" >&2
+    echo "  $REF_ROOT/ and $DATA_ROOT/)." >&2
+    exit 1
+fi
+
+SELECTED_EXPS=()
+if [[ -t 0 ]]; then
+    echo "Available experiments:"
+    for i in "${!AVAILABLE_EXPS[@]}"; do
+        printf '  %2d) %s\n' "$((i + 1))" "${AVAILABLE_EXPS[$i]}"
+    done
+    echo ""
+    read -r -p "Run which experiment(s)? (number(s), comma-separated, or Enter for all): " SELECTION
+    if [[ -z "$SELECTION" ]]; then
+        SELECTED_EXPS=("${AVAILABLE_EXPS[@]}")
+    else
+        IFS=',' read -r -a CHOICES <<< "$SELECTION"
+        for choice in "${CHOICES[@]}"; do
+            choice="$(tr -d '[:space:]' <<< "$choice")"
+            [[ -z "$choice" ]] && continue
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#AVAILABLE_EXPS[@]} )); then
+                SELECTED_EXPS+=("${AVAILABLE_EXPS[$((choice - 1))]}")
+            else
+                for e in "${AVAILABLE_EXPS[@]}"; do
+                    [[ "$e" == "$choice" ]] && SELECTED_EXPS+=("$e")
+                done
+            fi
+        done
+        if [[ ${#SELECTED_EXPS[@]} -eq 0 ]]; then
+            echo "No valid experiment selected, exiting." >&2
+            exit 1
+        fi
+    fi
+else
+    # Non-interactive (e.g. cron): run every available experiment.
+    SELECTED_EXPS=("${AVAILABLE_EXPS[@]}")
+fi
+
+echo ""
+echo "Selected experiment(s): ${SELECTED_EXPS[*]}"
+
+# ---------------------------------------------------------------------------
 # process_one EXP_DIR REF_PATH
 #
 # Runs the full per-sample pipeline (merge -> QC -> mapping -> consensus ->
@@ -107,14 +171,14 @@ process_one() {
 
     EXP_NAME="$(basename "$EXP_DIR")"
     DATA_EXP_DIR="$DATA_ROOT/$EXP_NAME"
-    EXP_RESULTS_DIR="$RESULTS_ROOT/$EXP_NAME"
+    EXP_RESULTS_DIR="$RESULTS_ROOT/${EXP_NAME}_${RUN_TIMESTAMP}"
     REF_FILE="$(basename "$REF_PATH")"
     REF_NAME="${REF_FILE%.*}"
     SAMPLE_DIR="$EXP_RESULTS_DIR/$REF_NAME"
     LOG="[$EXP_NAME/$REF_NAME]"
     mkdir -p "$SAMPLE_DIR"
 
-    echo "$LOG --- Reference: $REF_FILE -> results/$EXP_NAME/$REF_NAME/ ---"
+    echo "$LOG --- Reference: $REF_FILE -> results/${EXP_NAME}_${RUN_TIMESTAMP}/$REF_NAME/ ---"
 
     # All reference names in this experiment, used to detect per-reference
     # fastq subfolders/files vs. the shared "leftover" pool below.
@@ -319,8 +383,8 @@ JOBLIST="$(mktemp)"
 trap 'rm -f "$JOBLIST"' EXIT
 
 JOB_COUNT=0
-for EXP_DIR in "$REF_ROOT"/*/; do
-    EXP_NAME="$(basename "$EXP_DIR")"
+for EXP_NAME in "${SELECTED_EXPS[@]}"; do
+    EXP_DIR="$REF_ROOT/$EXP_NAME/"
     DATA_EXP_DIR="$DATA_ROOT/$EXP_NAME"
 
     echo ""
@@ -339,7 +403,7 @@ for EXP_DIR in "$REF_ROOT"/*/; do
         continue
     fi
 
-    mkdir -p "$RESULTS_ROOT/$EXP_NAME"
+    mkdir -p "$RESULTS_ROOT/${EXP_NAME}_${RUN_TIMESTAMP}"
 
     for REF_PATH in "${REF_FILES[@]}"; do
         printf '%s\0%s\0' "$EXP_DIR" "$REF_PATH" >> "$JOBLIST"
@@ -352,7 +416,7 @@ echo "==================================================================="
 echo " Running $JOB_COUNT sample(s), $PARALLEL_JOBS at a time"
 echo "==================================================================="
 
-export DATA_ROOT RESULTS_ROOT PRESET THREADS MIN_LEN MIN_QUAL VARIANT_CALLER BCFTOOLS_PLATFORM_OPT PILON_JAR PILON_MEM
+export DATA_ROOT RESULTS_ROOT PRESET THREADS MIN_LEN MIN_QUAL VARIANT_CALLER BCFTOOLS_PLATFORM_OPT PILON_JAR PILON_MEM RUN_TIMESTAMP
 export -f process_one
 
 if [[ "$JOB_COUNT" -gt 0 ]]; then
