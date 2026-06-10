@@ -255,7 +255,7 @@ for EXP_DIR in "$REF_ROOT"/*/; do
             bgzip -f "$SAMPLE_DIR/${REF_NAME}.vcf"
         else
             bcftools mpileup $BCFTOOLS_PLATFORM_OPT -f "$REF_PATH" "$SORTED_BAM" 2>/dev/null \
-                | bcftools call -mv -Oz -o "$VCF"
+                | bcftools call --ploidy 1 -mv -Oz -o "$VCF"
             bcftools index -f "$VCF"
         fi
 

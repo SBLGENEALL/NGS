@@ -186,12 +186,19 @@ python scripts/summarize_variants.py --results results --output results/summary_
 `.sorted.bam`을 열어 해당 위치의 read를 직접 봐서 진짜 변이인지
 판단하는 것이 좋습니다.
 
-### ONT 전용 변이 호출 설정 (`--platform ont`)
+### ONT 전용 변이 호출 설정 (`--platform ont`, `--ploidy 1`)
 
 `run_pipeline.sh`는 bcftools 1.12 이상이면 `bcftools mpileup`에 자동으로
 `--platform ont` 옵션을 적용합니다. 이 옵션은 ONT 리드의 indel 에러
 프로파일(특히 homopolymer 구간)을 고려해서 indel/SNP 호출 파라미터를
-조정해주므로, Illumina 기준 기본값보다 false-positive 변이가 훨씬
+조정해주므로, Illumina 기준 기본값보다 false-positive 변이가 줄어듭니다.
+
+또한 `bcftools call`에는 `--ploidy 1`을 지정합니다. 플라스미드/벡터는
+단일 클론(haploid)이므로, 진짜 변이라면 거의 모든 read(>90%)가 그 변이를
+지지해야 합니다. 기본값(diploid)으로는 read의 약 절반 정도만 지지하는
+homopolymer 에러도 `0/1` heterozygous 변이로 호출되어 노이즈가 많이
+잡히는데, `--ploidy 1`을 쓰면 0/0(레퍼런스) 또는 1/1(변이) 중 하나만
+선택하게 되어 이런 애매한 노이즈가 변이로 호출될 가능성이 크게
 줄어듭니다.
 
 기존 결과에 다시 적용하려면 그냥 `./run_pipeline.sh`를 다시 실행하면
