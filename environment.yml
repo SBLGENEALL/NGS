@@ -1,0 +1,10 @@
+name: NGS_env
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - minimap2
+  - samtools
+  - bcftools
+  - nanofilt
