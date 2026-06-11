@@ -256,6 +256,27 @@ python scripts/summarize_variants.py --min-qual 20 --min-depth 10
 `.sorted.bam`을 열어 해당 위치의 read를 직접 봐서 진짜 변이인지
 판단하는 것이 좋습니다.
 
+### 레퍼런스 양 끝(이음매) 변이 분리 (`--edge-margin`)
+
+원형 플라스미드/벡터를 선형 fasta로 펼치면, 실제로는 이어져 있는
+부위가 레퍼런스 상에서는 양쪽 끝(1번 위치 근처, 마지막 위치 근처)으로
+나뉘게 됩니다. 이 "이음매"를 가로지르는 read는 정렬이 어긋나기 쉬워서,
+레퍼런스 양 끝 부근에 같은 패턴의 indel이 반복적으로 잘못 호출되는
+경우가 많습니다.
+
+```bash
+python scripts/summarize_variants.py --edge-margin 50
+```
+
+- 레퍼런스 시작(1~50번) 또는 끝(마지막 50bp) 안에 있는 변이는
+  `Variants`/`SNP`/`Ins`/`Del` 집계에서 제외되고, 별도의
+  `Edge variants` 컬럼에 표시됩니다.
+- 값(50)은 이음매 아티팩트가 보통 몇 bp 정도 퍼지는지에 맞춰
+  조정하세요.
+- `Edge variants`에 표시된 항목은 진짜 변이가 아닌 매핑 아티팩트일
+  가능성이 높지만, 혹시 실제 벡터 구조상 그 위치에 진짜 차이가 있을
+  수도 있으니 한 번씩 확인하는 것을 권장합니다.
+
 ### ONT 전용 변이 호출 설정 (`-X ont`, `--ploidy 1`)
 
 `run_pipeline.sh`는 `bcftools mpileup`이 `-X`/`--config` 프리셋을

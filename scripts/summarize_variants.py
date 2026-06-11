@@ -25,6 +25,12 @@ Usage:
     # Filter out low-confidence calls (common with ONT homopolymer indel
     # noise from bcftools default settings)
     python scripts/summarize_variants.py --min-qual 20 --min-depth 10
+
+    # Move variants near either end of a (circularized) reference into a
+    # separate "Edge variants" column instead of counting them as real
+    # mutations -- useful for circular plasmids linearized at an
+    # arbitrary point, where mapping artifacts cluster at both ends
+    python scripts/summarize_variants.py --edge-margin 50
 """
 import argparse
 import csv
@@ -113,6 +119,40 @@ def read_changes_variants(changes_path):
     return variants
 
 
+def get_ref_length(sample_dir, sample_name):
+    """Return the reference length by reading the last line of
+    <sample_name>.depth.txt (samtools depth -a output: chrom, pos, depth
+    for every position 1..length), or None if not available."""
+    depth_path = os.path.join(sample_dir, f"{sample_name}.depth.txt")
+    if not os.path.isfile(depth_path):
+        return None
+    last_pos = None
+    with open(depth_path) as f:
+        for line in f:
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) >= 2:
+                last_pos = cols[1]
+    return int(last_pos) if last_pos and last_pos.isdigit() else None
+
+
+def split_edge_variants(variants, ref_len, edge_margin):
+    """Split variants into (interior, edge) based on distance from either
+    end of the reference. Variants within edge_margin bp of position 1 or
+    of ref_len are considered "edge" (likely circular-plasmid junction
+    artifacts from linearizing the reference)."""
+    if edge_margin <= 0 or not ref_len:
+        return variants, []
+    interior, edge = [], []
+    for v in variants:
+        pos_str = v[0]
+        pos = int(pos_str) if pos_str.isdigit() else None
+        if pos is not None and (pos <= edge_margin or pos > ref_len - edge_margin):
+            edge.append(v)
+        else:
+            interior.append(v)
+    return interior, edge
+
+
 def read_report_fields(report_path):
     """Pull 'Mapping' and 'Mean depth' lines out of a *_report.md file."""
     mapping, depth = "", ""
@@ -150,6 +190,12 @@ def main():
                          help="Minimum VCF QUAL to count a variant (default: 0, no filter)")
     parser.add_argument("--min-depth", type=int, default=0,
                          help="Minimum read depth (INFO/DP) to count a variant (default: 0, no filter)")
+    parser.add_argument("--edge-margin", type=int, default=0,
+                         help="Report variants within this many bp of either end of the "
+                              "reference separately, in an 'Edge variants' column, instead "
+                              "of counting them as real mutations. Useful for circular "
+                              "plasmids linearized at an arbitrary point, where mapping "
+                              "artifacts cluster at both ends (default: 0, no separation)")
     args = parser.parse_args()
 
     all_exp_names = sorted(d for d in os.listdir(args.results) if os.path.isdir(os.path.join(args.results, d)))
@@ -209,6 +255,9 @@ def main():
                 method = "bcftools/medaka"
                 variants = read_vcf_variants(vcf_path, min_qual=args.min_qual, min_depth=args.min_depth)
 
+            ref_len = get_ref_length(sample_dir, sample_name)
+            variants, edge_variants = split_edge_variants(variants, ref_len, args.edge_margin)
+
             n_snp = sum(1 for v in variants if v[1] == "point mutation")
             n_ins = sum(1 for v in variants if v[1] == "insertion")
             n_del = sum(1 for v in variants if v[1] == "deletion")
@@ -223,6 +272,7 @@ def main():
                 "n_ins": n_ins,
                 "n_del": n_del,
                 "variants": format_variants(variants),
+                "edge_variants": format_variants(edge_variants) if args.edge_margin > 0 else "",
             })
 
     if not rows:
@@ -231,17 +281,17 @@ def main():
     if output.lower().endswith(".csv"):
         with open(output, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=["experiment", "sample", "mapping", "mean_depth", "method",
-                                                     "n_snp", "n_ins", "n_del", "variants"])
+                                                     "n_snp", "n_ins", "n_del", "variants", "edge_variants"])
             writer.writeheader()
             writer.writerows(rows)
     else:
         with open(output, "w") as f:
             f.write("# Variant summary\n\n")
-            f.write("| Experiment | Sample | Mapping | Mean depth | Method | SNP | Ins | Del | Variants |\n")
-            f.write("|---|---|---|---|---|---|---|---|---|\n")
+            f.write("| Experiment | Sample | Mapping | Mean depth | Method | SNP | Ins | Del | Variants | Edge variants |\n")
+            f.write("|---|---|---|---|---|---|---|---|---|---|\n")
             for r in rows:
                 f.write(f"| {r['experiment']} | {r['sample']} | {r['mapping']} | {r['mean_depth']} | {r['method']} "
-                        f"| {r['n_snp']} | {r['n_ins']} | {r['n_del']} | {r['variants']} |\n")
+                        f"| {r['n_snp']} | {r['n_ins']} | {r['n_del']} | {r['variants']} | {r['edge_variants']} |\n")
 
     print(f"Wrote summary for {len(rows)} sample(s) to {output}")
     n_with_variants = sum(1 for r in rows if r["variants"] != "None")
