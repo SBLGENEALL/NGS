@@ -171,10 +171,7 @@ results/260609_TPase_260610_1810/<reference_name>/
 ```
 
 같은 실험을 다시 실행하면 새로운 타임스탬프 폴더가 생성되어, 이전
-실행 결과와 섞이지 않고 따로 보관됩니다. `summarize_variants.py`는
-`results/` 아래 모든 폴더를 스캔하므로 모든 실행 결과가 요약 표에
-함께 나타납니다 (`Experiment` 열에 타임스탬프가 포함된 폴더명이
-표시됩니다).
+실행 결과와 섞이지 않고 따로 보관됩니다.
 
 ## 병렬 처리 (고성능 워크스테이션)
 
@@ -206,10 +203,26 @@ parallel_jobs: 32
 python scripts/summarize_variants.py
 ```
 
-별도 옵션 없이 실행하면 기본값으로 `results/summary_report.csv`가
-생성됩니다 (Excel에서 바로 열어서 정렬/필터 가능). Markdown 표로 받고
-싶으면 `--output results/summary_report.md`처럼 확장자를 `.md`로
-지정하세요. 예시(Markdown):
+실행하면 `results/` 아래의 결과 폴더 목록을 보여주고, 어떤 결과를
+요약할지 물어봅니다:
+
+```
+Available results:
+   1) 260609_TPase_260610_1810
+   2) 260610_newexp_260610_1900
+
+Summarize which result(s)? (number(s), comma-separated, or Enter for all):
+```
+
+- 번호 하나를 선택하면 (예: `1`), 그 결과 폴더와 같은 이름의 CSV가
+  `results/260609_TPase_260610_1810.csv`로 생성됩니다.
+- 여러 개(`1,2`) 또는 Enter(전체)를 선택하면 `results/summary_report.csv`로
+  생성됩니다.
+- CSV는 Excel에서 바로 열어서 정렬/필터할 수 있습니다. Markdown 표로
+  받고 싶으면 `--output results/summary_report.md`처럼 확장자를 `.md`로
+  지정하세요.
+
+예시(Markdown):
 
 | Experiment | Sample | Mapping | Mean depth | Method | SNP | Ins | Del | Variants |
 |---|---|---|---|---|---|---|---|---|

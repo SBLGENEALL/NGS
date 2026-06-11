@@ -3,13 +3,20 @@
 summarize_variants.py
 
 Scan results/<experiment>/<reference_name>/ for each sample's
-<reference_name>.vcf.gz and <reference_name>_report.md, and produce a
-single summary table across ALL samples: mapping rate, mean depth, and a
-short description of every variant found (point mutation / insertion /
-deletion), so you don't have to open each VCF individually.
+<reference_name>.vcf.gz (or <reference_name>.changes for Pilon) and
+<reference_name>_report.md, and produce a single summary table: mapping
+rate, mean depth, and a short description of every variant found (point
+mutation / insertion / deletion), so you don't have to open each VCF
+individually.
+
+When run interactively, it lists the result folders under results/
+(e.g. 260609_TPase_260610_1810) and asks which one(s) to summarize
+(Enter = all). The output file defaults to CSV, named after the
+selected result folder (e.g. results/260609_TPase_260610_1810.csv), or
+results/summary_report.csv if multiple/all folders are selected.
 
 Usage:
-    # Default: writes results/summary_report.csv
+    # Interactive: pick a result folder, writes <folder>.csv
     python scripts/summarize_variants.py
 
     # Markdown instead of CSV
@@ -24,6 +31,7 @@ import csv
 import gzip
 import os
 import re
+import sys
 
 
 def read_vcf_variants(vcf_path, min_qual=0.0, min_depth=0):
@@ -134,16 +142,49 @@ def format_variants(variants):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--results", default="results", help="Results root directory (default: results)")
-    parser.add_argument("--output", default="results/summary_report.csv",
-                         help="Output summary file (.md or .csv); default: results/summary_report.csv")
+    parser.add_argument("--output", default=None,
+                         help="Output summary file (.md or .csv); default: "
+                              "<selected result folder>.csv next to --results, "
+                              "or results/summary_report.csv if multiple/all are selected")
     parser.add_argument("--min-qual", type=float, default=0.0,
                          help="Minimum VCF QUAL to count a variant (default: 0, no filter)")
     parser.add_argument("--min-depth", type=int, default=0,
                          help="Minimum read depth (INFO/DP) to count a variant (default: 0, no filter)")
     args = parser.parse_args()
 
+    all_exp_names = sorted(d for d in os.listdir(args.results) if os.path.isdir(os.path.join(args.results, d)))
+    if not all_exp_names:
+        raise SystemExit(f"No result folders found under {args.results}/")
+
+    selected_exp_names = all_exp_names
+    if sys.stdin.isatty():
+        print("Available results:")
+        for i, name in enumerate(all_exp_names, 1):
+            print(f"  {i:2d}) {name}")
+        print()
+        choice = input("Summarize which result(s)? (number(s), comma-separated, or Enter for all): ").strip()
+        if choice:
+            picked = []
+            for part in choice.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                if part.isdigit() and 1 <= int(part) <= len(all_exp_names):
+                    picked.append(all_exp_names[int(part) - 1])
+                elif part in all_exp_names:
+                    picked.append(part)
+            if picked:
+                selected_exp_names = picked
+
+    output = args.output
+    if output is None:
+        if len(selected_exp_names) == 1:
+            output = os.path.join(args.results, f"{selected_exp_names[0]}.csv")
+        else:
+            output = os.path.join(args.results, "summary_report.csv")
+
     rows = []
-    for exp_name in sorted(os.listdir(args.results)):
+    for exp_name in selected_exp_names:
         exp_dir = os.path.join(args.results, exp_name)
         if not os.path.isdir(exp_dir):
             continue
@@ -187,14 +228,14 @@ def main():
     if not rows:
         raise SystemExit(f"No *.vcf.gz found under {args.results}/<experiment>/<sample>/")
 
-    if args.output.lower().endswith(".csv"):
-        with open(args.output, "w", newline="") as f:
+    if output.lower().endswith(".csv"):
+        with open(output, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=["experiment", "sample", "mapping", "mean_depth", "method",
                                                      "n_snp", "n_ins", "n_del", "variants"])
             writer.writeheader()
             writer.writerows(rows)
     else:
-        with open(args.output, "w") as f:
+        with open(output, "w") as f:
             f.write("# Variant summary\n\n")
             f.write("| Experiment | Sample | Mapping | Mean depth | Method | SNP | Ins | Del | Variants |\n")
             f.write("|---|---|---|---|---|---|---|---|---|\n")
@@ -202,7 +243,7 @@ def main():
                 f.write(f"| {r['experiment']} | {r['sample']} | {r['mapping']} | {r['mean_depth']} | {r['method']} "
                         f"| {r['n_snp']} | {r['n_ins']} | {r['n_del']} | {r['variants']} |\n")
 
-    print(f"Wrote summary for {len(rows)} sample(s) to {args.output}")
+    print(f"Wrote summary for {len(rows)} sample(s) to {output}")
     n_with_variants = sum(1 for r in rows if r["variants"] != "None")
     print(f"  {n_with_variants} sample(s) have at least one variant")
 
