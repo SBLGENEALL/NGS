@@ -264,18 +264,27 @@ python scripts/summarize_variants.py --min-qual 20 --min-depth 10
 레퍼런스 양 끝 부근에 같은 패턴의 indel이 반복적으로 잘못 호출되는
 경우가 많습니다.
 
-```bash
-python scripts/summarize_variants.py --edge-margin 50
+결과 선택 후, 다음과 같이 추가로 물어봅니다:
+
+```
+Separate variants near reference ends (circular-plasmid junction artifacts)? Edge margin in bp [default 50, 0 = off]:
 ```
 
-- 레퍼런스 시작(1~50번) 또는 끝(마지막 50bp) 안에 있는 변이는
-  `Variants`/`SNP`/`Ins`/`Del` 집계에서 제외되고, 별도의
-  `Edge variants` 컬럼에 표시됩니다.
-- 값(50)은 이음매 아티팩트가 보통 몇 bp 정도 퍼지는지에 맞춰
-  조정하세요.
-- `Edge variants`에 표시된 항목은 진짜 변이가 아닌 매핑 아티팩트일
-  가능성이 높지만, 혹시 실제 벡터 구조상 그 위치에 진짜 차이가 있을
-  수도 있으니 한 번씩 확인하는 것을 권장합니다.
+- 그냥 Enter → 기본값 50bp 적용
+- `0` → 끝부분 분리 안 함 (기존 동작과 동일)
+- 원하는 숫자 입력 → 레퍼런스 시작/끝 그만큼(bp) 안에 있는 변이를
+  `Variants`/`SNP`/`Ins`/`Del` 집계에서 제외하고 별도의
+  `Edge variants` 컬럼에 표시
+
+ONT 데이터에서는 보통 **50bp** 정도면 충분하지만, depth가 매우 높거나
+read가 짧다면 100bp까지 늘려도 됩니다.
+
+`Edge variants`에 표시된 항목은 진짜 변이가 아닌 매핑 아티팩트일
+가능성이 높지만, 혹시 실제 벡터 구조상 그 위치에 진짜 차이가 있을
+수도 있으니 한 번씩 확인하는 것을 권장합니다.
+
+명령줄에서 바로 지정하고 싶으면 (non-interactive) `--edge-margin 50`
+옵션을 줄 수도 있습니다.
 
 ### ONT 전용 변이 호출 설정 (`-X ont`, `--ploidy 1`)
 

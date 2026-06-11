@@ -190,12 +190,13 @@ def main():
                          help="Minimum VCF QUAL to count a variant (default: 0, no filter)")
     parser.add_argument("--min-depth", type=int, default=0,
                          help="Minimum read depth (INFO/DP) to count a variant (default: 0, no filter)")
-    parser.add_argument("--edge-margin", type=int, default=0,
+    parser.add_argument("--edge-margin", type=int, default=None,
                          help="Report variants within this many bp of either end of the "
                               "reference separately, in an 'Edge variants' column, instead "
                               "of counting them as real mutations. Useful for circular "
                               "plasmids linearized at an arbitrary point, where mapping "
-                              "artifacts cluster at both ends (default: 0, no separation)")
+                              "artifacts cluster at both ends. If not given, asked "
+                              "interactively (default: 50; non-interactive: 0, no separation)")
     args = parser.parse_args()
 
     all_exp_names = sorted(d for d in os.listdir(args.results) if os.path.isdir(os.path.join(args.results, d)))
@@ -221,6 +222,22 @@ def main():
                     picked.append(part)
             if picked:
                 selected_exp_names = picked
+
+        edge_margin = args.edge_margin
+        if edge_margin is None:
+            answer = input(
+                "Separate variants near reference ends (circular-plasmid junction "
+                "artifacts)? Edge margin in bp [default 50, 0 = off]: "
+            ).strip()
+            if not answer:
+                edge_margin = 50
+            else:
+                try:
+                    edge_margin = int(answer)
+                except ValueError:
+                    edge_margin = 50
+    else:
+        edge_margin = args.edge_margin if args.edge_margin is not None else 0
 
     output = args.output
     if output is None:
@@ -256,7 +273,7 @@ def main():
                 variants = read_vcf_variants(vcf_path, min_qual=args.min_qual, min_depth=args.min_depth)
 
             ref_len = get_ref_length(sample_dir, sample_name)
-            variants, edge_variants = split_edge_variants(variants, ref_len, args.edge_margin)
+            variants, edge_variants = split_edge_variants(variants, ref_len, edge_margin)
 
             n_snp = sum(1 for v in variants if v[1] == "point mutation")
             n_ins = sum(1 for v in variants if v[1] == "insertion")
@@ -272,7 +289,7 @@ def main():
                 "n_ins": n_ins,
                 "n_del": n_del,
                 "variants": format_variants(variants),
-                "edge_variants": format_variants(edge_variants) if args.edge_margin > 0 else "",
+                "edge_variants": format_variants(edge_variants) if edge_margin > 0 else "",
             })
 
     if not rows:
