@@ -222,20 +222,6 @@ Summarize which result(s)? (number(s), comma-separated, or Enter for all):
   받고 싶으면 `--output results/summary_report.md`처럼 확장자를 `.md`로
   지정하세요.
 
-예시(Markdown):
-
-| Experiment | Sample | Mapping | Mean depth | Method | SNP | Ins | Del | Variants |
-|---|---|---|---|---|---|---|---|---|
-| 260609_TPase | R34.141-DAR-revSPG23_TIR90 | 99.1% (...) | 120.34x | bcftools/medaka | 0 | 0 | 0 | None |
-| 260609_TPase | 02_xxx | 98.4% (...) | 87.10x | pilon | 1 | 0 | 1 | SNP @1523 G>A; del @3010 AT>A |
-
-`Method` 열은 해당 샘플의 변이가 어디서 나왔는지를 보여줍니다
-(`pilon`: `<reference_name>.changes` 파일 기반, `bcftools/medaka`: `.vcf.gz`
-기반). `variant_caller: pilon`일 때는 `--min-qual`/`--min-depth` 필터가
-적용되지 않습니다 (Pilon의 `.changes`에는 이미 실제로 수정한 위치만
-나열되기 때문입니다).
-
-- `Variants` 열이 `None`이면 레퍼런스 대비 호출된 변이가 없는 샘플입니다.
 
 ### 노이즈성 변이 필터링 (`--min-qual`, `--min-depth`)
 
