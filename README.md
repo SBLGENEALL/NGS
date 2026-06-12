@@ -150,7 +150,7 @@ cd nanopore_pipeline
 
 ```
 Available experiments:
-   1) 260609_TPase
+   1) 260609_newexp
    2) 260610_newexp
 
 Run which experiment(s)? (number(s), comma-separated, or Enter for all):
@@ -163,11 +163,11 @@ Run which experiment(s)? (number(s), comma-separated, or Enter for all):
 ### 결과 폴더 이름 (실행 시점 타임스탬프 포함)
 
 결과는 `results/<실험명>_<실행한 날짜>_<시간>/<reference_name>/`에
-저장됩니다. 예를 들어 `260609_TPase` 실험을 `2026-06-10 18:10`에
+저장됩니다. 예를 들어 `260609_exp` 실험을 `2026-06-10 18:10`에
 실행하면:
 
 ```
-results/260609_TPase_260610_1810/<reference_name>/
+results/260609_exp_260610_1810/<reference_name>/
 ```
 
 같은 실험을 다시 실행하면 새로운 타임스탬프 폴더가 생성되어, 이전
@@ -208,14 +208,14 @@ python scripts/summarize_variants.py
 
 ```
 Available results:
-   1) 260609_TPase_260610_1810
+   1) 260609_exp_260610_1810
    2) 260610_newexp_260610_1900
 
 Summarize which result(s)? (number(s), comma-separated, or Enter for all):
 ```
 
 - 번호 하나를 선택하면 (예: `1`), 그 결과 폴더와 같은 이름의 CSV가
-  `results/260609_TPase_260610_1810.csv`로 생성됩니다.
+  `results/260609_exp_260610_1810.csv`로 생성됩니다.
 - 여러 개(`1,2`) 또는 Enter(전체)를 선택하면 `results/summary_report.csv`로
   생성됩니다.
 - CSV는 Excel에서 바로 열어서 정렬/필터할 수 있습니다. Markdown 표로
