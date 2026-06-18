@@ -14,32 +14,21 @@
 #   data/<date>_<experiment_name>/...
 #   results/<date>_<experiment_name>_<run_YYMMDD_HHMM>/<reference_name>/...
 #
-# On startup, the script lists every experiment folder that exists under
-# both references_dir and data_dir and asks which one(s) to run (Enter =
-# all). Each run's results go into a results/ folder suffixed with the
-# date and time the pipeline was started, so repeated runs don't overwrite
-# each other.
-#
 # Per-reference fastq matching, in order of preference:
-#   1. data/<experiment>/**/<reference_name>.<ext>  (exact filename match,
-#      ext can be .fastq(.gz), .fq(.gz) or plain .gz, e.g.
-#      R34.141-DAR-revSPG23_TIR90.fa <-> R34.141-DAR-revSPG23_TIR90.gz)
-#   2. data/<experiment>/<reference_name>/**/*.fastq(.gz)
-#      (e.g. demultiplexed with a sample sheet whose alias = reference_name
-#      -- see scripts/generate_samplesheet.py)
-#   3. data/<experiment>/barcodeNN/  (reference filename starts with a
-#      number NN that matches barcode number NN)
-#   4. Any fastq(.gz) directly under data/<experiment>/ that is NOT
-#      inside another reference-named subfolder/file or a barcodeNN/
-#      folder (single-reference-per-experiment case, e.g.
-#      data/<experiment>/barcode01/*.fastq.gz)
+#   1. data/<experiment>/**/<reference_name>.<ext>  (exact filename match)
+#   2. data/<experiment>/<reference_name>/**/*.fastq(.gz)  (alias/name folder)
+#   3. data/<experiment>/barcodeNN/  (reference filename starts with NN_...)
+#   4. shared pool (single-reference-per-experiment fallback)
 #
-# Parallelism:
-#   Each reference (sample) is processed independently, so on a
-#   high-core workstation you can process many samples at once.
-#   Set "threads" (per-sample minimap2/samtools threads) and
-#   "parallel_jobs" (how many samples to process concurrently) in
-#   config.yaml so that threads * parallel_jobs <= number of CPU cores.
+# Consensus outputs:
+#   <reference_name>.samtools.consensus.fasta
+#       Raw read-pileup consensus from samtools consensus. Useful for checking
+#       ambiguous N sites, low-confidence regions, and ONT homopolymer behavior.
+#   <reference_name>.consensus.fasta
+#       Final SnapGene/review consensus. Built by applying high-confidence VCF
+#       variants to the original reference using bcftools consensus. Sites not
+#       called as variants remain as the reference base, reducing false N/indel
+#       artifacts in homopolymer/low-complexity ONT regions.
 #
 # Usage:
 #   ./run_pipeline.sh [config.yaml]
@@ -57,9 +46,7 @@ read_cfg() {
     local key="$1" default="$2"
     local val
     val=$(grep -E "^${key}:" "$CONFIG" | head -n1 | sed -E "s/^${key}:[[:space:]]*//; s/[[:space:]]*(#.*)?$//")
-    # Strip surrounding quotes, e.g. pilon_jar: "/path/to/pilon.jar"
     val=$(sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/' <<< "$val")
-    # Trim any leading/trailing whitespace left inside the quotes
     val=$(sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' <<< "$val")
     if [[ -z "$val" ]]; then echo "$default"; else echo "$val"; fi
 }
@@ -79,13 +66,9 @@ if [[ -n "$PILON_JAR" && "$PILON_JAR" != /* ]]; then
 fi
 PILON_MEM="$(read_cfg pilon_mem 16G)"
 
-# Timestamp for this run, used to suffix the results folder so repeated
-# runs don't overwrite each other, e.g. results/260609_TPase_260610_1810/
 RUN_TIMESTAMP="$(date +%y%m%d_%H%M)"
 
-# bcftools mpileup supports a "-X ont" config preset that tunes indel/SNP
-# calling parameters for ONT's error profile (much fewer false-positive
-# indels in homopolymer runs than the default/Illumina-tuned settings).
+# bcftools mpileup supports a "-X ont" config preset in newer versions.
 BCFTOOLS_PLATFORM_OPT=""
 if command -v bcftools >/dev/null 2>&1 && bcftools mpileup 2>&1 | grep -qE -- '-X|--config'; then
     BCFTOOLS_PLATFORM_OPT="-X ont"
@@ -100,12 +83,10 @@ echo "   preset      : $PRESET   threads/sample: $THREADS   parallel samples: $P
 echo "==================================================================="
 
 mkdir -p "$RESULTS_ROOT"
-
 shopt -s nullglob
 
 # ---------------------------------------------------------------------------
-# Interactive experiment selection: list every folder that exists under
-# BOTH references_dir and data_dir, and ask which one(s) to run.
+# Interactive experiment selection
 # ---------------------------------------------------------------------------
 AVAILABLE_EXPS=()
 for EXP_DIR in "$REF_ROOT"/*/; do
@@ -150,7 +131,6 @@ if [[ -t 0 ]]; then
         fi
     fi
 else
-    # Non-interactive (e.g. cron): run every available experiment.
     SELECTED_EXPS=("${AVAILABLE_EXPS[@]}")
 fi
 
@@ -159,10 +139,6 @@ echo "Selected experiment(s): ${SELECTED_EXPS[*]}"
 
 # ---------------------------------------------------------------------------
 # process_one EXP_DIR REF_PATH
-#
-# Runs the full per-sample pipeline (merge -> QC -> mapping -> consensus ->
-# variant calling -> report) for a single reference fasta. Self-contained so
-# it can be exported and run in parallel via xargs.
 # ---------------------------------------------------------------------------
 process_one() {
     set -euo pipefail
@@ -180,8 +156,6 @@ process_one() {
 
     echo "$LOG --- Reference: $REF_FILE -> results/${EXP_NAME}_${RUN_TIMESTAMP}/$REF_NAME/ ---"
 
-    # All reference names in this experiment, used to detect per-reference
-    # fastq subfolders/files vs. the shared "leftover" pool below.
     local REF_FILES_ALL=("$EXP_DIR"*.fasta "$EXP_DIR"*.fa "$EXP_DIR"*.fna)
     local REF_NAMES=() rp rf
     for rp in "${REF_FILES_ALL[@]}"; do
@@ -189,12 +163,8 @@ process_one() {
         REF_NAMES+=("${rf%.*}")
     done
 
-    # Read-file patterns: ONT exports are sometimes named *.fastq.gz / *.fastq,
-    # but also just *.fq(.gz) or even plain *.gz with no "fastq" in the name.
     local READ_FIND_EXPR=( -type f \( -iname "*.fastq.gz" -o -iname "*.fastq" -o -iname "*.fq.gz" -o -iname "*.fq" -o -iname "*.gz" \) )
 
-    # Strip read-file extensions to compare against a reference name
-    # (handles "<name>.gz", "<name>.fastq.gz", "<name>.fq", ...).
     strip_read_ext() {
         local n="$1"
         n="${n%.gz}"
@@ -203,13 +173,6 @@ process_one() {
         echo "$n"
     }
 
-    # Fastq files directly under DATA_EXP_DIR that are NOT inside a
-    # subfolder named after one of this experiment's references, not inside
-    # a barcodeNN/ folder (reserved for number-based matching), and whose
-    # name doesn't exactly match one of this experiment's reference names
-    # (reserved for exact-file matching). Used as the fallback pool for
-    # references that don't match anything else (e.g. a single reference
-    # per experiment with data/<exp>/barcode01/).
     local SHARED_FASTQ=() f rel top is_ref_dir is_ref_file r
     while IFS= read -r -d '' f; do
         rel="${f#"$DATA_EXP_DIR"/}"
@@ -225,13 +188,6 @@ process_one() {
         fi
     done < <(find "$DATA_EXP_DIR" "${READ_FIND_EXPR[@]}" -print0)
 
-    # Pick the fastq files for this reference, in order of preference:
-    #   1. data/<exp>/**/<reference_name>.<ext>  (exact filename match,
-    #      e.g. R34.141-DAR-revSPG23_TIR90.fa <-> R34.141-DAR-revSPG23_TIR90.gz)
-    #   2. data/<exp>/<reference_name>/          (exact name folder match)
-    #   3. data/<exp>/barcodeNN/                  (reference filename
-    #      starts with a number "NN_..." that matches barcode number NN)
-    #   4. shared pool (single-reference-per-experiment fallback)
     local FASTQ_FILES=()
     while IFS= read -r -d '' f; do
         if [[ "$(strip_read_ext "$(basename "$f")")" == "$REF_NAME" ]]; then
@@ -302,7 +258,7 @@ process_one() {
         echo "$LOG [2/5] QC filtering skipped"
     fi
 
-    # 3. Map to reference with minimap2, sort with samtools
+    # 3. Map to reference with minimap2, sort/index with samtools
     local SORTED_BAM="$SAMPLE_DIR/${REF_NAME}.sorted.bam"
     echo "$LOG [3/5] Mapping -> $(basename "$SORTED_BAM")"
     minimap2 -ax "$PRESET" -t "$THREADS" "$REF_PATH" "$READS_FOR_MAPPING" \
@@ -311,11 +267,11 @@ process_one() {
     samtools flagstat "$SORTED_BAM" > "$SAMPLE_DIR/${REF_NAME}.flagstat.txt"
     samtools depth -a "$SORTED_BAM" > "$SAMPLE_DIR/${REF_NAME}.depth.txt"
 
-    # 4. Consensus sequence
-    local CONSENSUS_FASTA="$SAMPLE_DIR/${REF_NAME}.consensus.fasta"
-    echo "$LOG [4/5] Building consensus -> $(basename "$CONSENSUS_FASTA")"
-    samtools consensus -a -f fasta "$SORTED_BAM" > "$CONSENSUS_FASTA"
-    sed -i "1s/.*/>${REF_NAME}/" "$CONSENSUS_FASTA"
+    # 4. Raw samtools consensus: useful for ambiguous N inspection
+    local SAMTOOLS_CONSENSUS_FASTA="$SAMPLE_DIR/${REF_NAME}.samtools.consensus.fasta"
+    echo "$LOG [4/5] Building raw samtools consensus -> $(basename "$SAMTOOLS_CONSENSUS_FASTA")"
+    samtools consensus -a -f fasta "$SORTED_BAM" > "$SAMTOOLS_CONSENSUS_FASTA"
+    sed -i "1s/.*/>${REF_NAME}_samtools_consensus/" "$SAMTOOLS_CONSENSUS_FASTA"
 
     # 5. Variant calling
     local VCF="$SAMPLE_DIR/${REF_NAME}.vcf.gz"
@@ -324,6 +280,7 @@ process_one() {
         medaka_haploid_variant -i "$READS_FOR_MAPPING" -r "$REF_PATH" -o "$SAMPLE_DIR/medaka"
         cp "$SAMPLE_DIR/medaka/medaka.annotated.vcf" "$SAMPLE_DIR/${REF_NAME}.vcf" 2>/dev/null || true
         bgzip -f "$SAMPLE_DIR/${REF_NAME}.vcf"
+        bcftools index -f "$VCF"
     elif [[ "$VARIANT_CALLER" == "pilon" ]]; then
         if [[ -z "$PILON_JAR" || ! -f "$PILON_JAR" ]]; then
             echo "$LOG [SKIP] variant_caller=pilon but pilon_jar not found: '$PILON_JAR'" >&2
@@ -336,15 +293,10 @@ process_one() {
                 --fix all --mindepth 2.0 --changes --vcf --verbose --threads "$THREADS" \
                 > "$PILON_DIR/${REF_NAME}.pilon.log" 2>&1
 
-            # .changes file: one line per correction (POS REF->ALT), copied
-            # next to the other per-sample outputs for easy inspection.
             if [[ -f "$PILON_DIR/${REF_NAME}.changes" ]]; then
                 cp "$PILON_DIR/${REF_NAME}.changes" "$SAMPLE_DIR/${REF_NAME}.changes"
             fi
 
-            # Pilon's --vcf includes every reference position (ALT="." where
-            # no change was made); keep only the actual variant records so
-            # it matches the bcftools/medaka output format.
             if [[ -f "$PILON_DIR/${REF_NAME}.vcf" ]]; then
                 bcftools view -e 'ALT="."' "$PILON_DIR/${REF_NAME}.vcf" -Oz -o "$VCF"
                 bcftools index -f "$VCF"
@@ -356,11 +308,26 @@ process_one() {
         bcftools index -f "$VCF"
     fi
 
+    # 6. Final reference-guided consensus for SnapGene/review
+    #    This applies only called VCF variants to the reference. Non-variant
+    #    ambiguous/homopolymer sites remain as the reference base.
+    local FINAL_CONSENSUS_FASTA="$SAMPLE_DIR/${REF_NAME}.consensus.fasta"
+    if [[ -s "$VCF" ]]; then
+        echo "$LOG [6/5] Building final VCF-guided consensus -> $(basename "$FINAL_CONSENSUS_FASTA")"
+        bcftools consensus -f "$REF_PATH" "$VCF" > "$FINAL_CONSENSUS_FASTA"
+        sed -i "1s/.*/>${REF_NAME}/" "$FINAL_CONSENSUS_FASTA"
+    else
+        echo "$LOG [6/5] No VCF found; copying reference as final consensus -> $(basename "$FINAL_CONSENSUS_FASTA")"
+        cp "$REF_PATH" "$FINAL_CONSENSUS_FASTA"
+        sed -i "1s/.*/>${REF_NAME}/" "$FINAL_CONSENSUS_FASTA"
+    fi
+
     # Per-sample summary report
     local REPORT="$SAMPLE_DIR/${REF_NAME}_report.md"
-    local MAPPED MEAN_DEPTH
+    local MAPPED MEAN_DEPTH N_COUNT
     MAPPED=$(grep "mapped (" "$SAMPLE_DIR/${REF_NAME}.flagstat.txt" | head -1)
     MEAN_DEPTH=$(awk '{sum+=$3; n++} END {if (n>0) printf "%.2f", sum/n; else print "0"}' "$SAMPLE_DIR/${REF_NAME}.depth.txt")
+    N_COUNT=$(grep -v '^>' "$SAMTOOLS_CONSENSUS_FASTA" | tr -d '\n' | grep -o 'N' | wc -l | tr -d '[:space:]')
     {
         echo "# Report: $REF_NAME"
         echo ""
@@ -368,7 +335,9 @@ process_one() {
         echo "- Reference: $REF_FILE"
         echo "- Mapping: $MAPPED"
         echo "- Mean depth: ${MEAN_DEPTH}x"
-        echo "- Consensus: ${REF_NAME}.consensus.fasta"
+        echo "- Final consensus for SnapGene: ${REF_NAME}.consensus.fasta"
+        echo "- Raw samtools consensus: ${REF_NAME}.samtools.consensus.fasta"
+        echo "- Raw samtools consensus N count: ${N_COUNT}"
         echo "- Variants: ${REF_NAME}.vcf.gz"
     } > "$REPORT"
 
@@ -376,8 +345,7 @@ process_one() {
 }
 
 # ---------------------------------------------------------------------------
-# Build the job list: one (EXP_DIR, REF_PATH) pair per reference fasta of
-# every experiment that has a matching data folder.
+# Build the job list
 # ---------------------------------------------------------------------------
 JOBLIST="$(mktemp)"
 trap 'rm -f "$JOBLIST"' EXIT
