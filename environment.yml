@@ -4,6 +4,8 @@ channels:
   - bioconda
 dependencies:
   - python=3.11
+  - streamlit>=1.32
+  - pandas>=2.0
   - minimap2
   - samtools
   - bcftools

@@ -3,6 +3,33 @@
 Oxford Nanopore MinION으로 시퀀싱한 결과(fastq)를 reference FASTA(벡터맵)에
 매핑하고, BAM/consensus FASTA/VCF/리포트를 생성하는 파이프라인입니다.
 
+## 로컬 웹 UI: ONT Variant Explorer
+
+명령어 없이 브라우저에서 분석할 수 있는 오프라인 Streamlit UI가 포함되어
+있습니다. 데이터와 분석은 Linux 서버 내부에서만 처리됩니다.
+
+```bash
+conda env update -n NGS_env -f environment.yml
+conda activate NGS_env
+./run_ui.sh
+```
+
+브라우저에서 `http://<Linux-server-IP>:8501`을 열면 다음 두 모드를 사용할 수
+있습니다.
+
+1. **Quick FASTA comparison**: reference와 query/consensus 서열을 붙여넣거나
+   업로드하여 SNP(point mutation), insertion, deletion을 즉시 비교합니다.
+   reverse complement와 circular plasmid 이음매를 자동으로 처리합니다.
+2. **Raw ONT analysis**: reference FASTA와 FASTQ/FASTQ.GZ(또는 서버 폴더)를
+   입력하여 기존 전체 파이프라인을 실행하고 mapping rate, depth, coverage,
+   QUAL, DP, allele fraction과 변이 표를 확인합니다.
+
+대용량 FASTQ는 브라우저로 업로드하지 않고 서버 경로를 선택하는 방식을
+권장합니다. 기본 read QC는 `500 bp / Q10`이며 coverage가 부족할 때만
+`300 bp / Q8` 완화를 고려합니다. 설치·화면·결과 해석은
+[`UI_GUIDE.md`](UI_GUIDE.md)를 참고하세요.
+
+
 ## 핵심 아이디어: 폴더명 기반 자동 매칭
 
 `references/`와 `data/` 아래에 **"날짜_실험명" 폴더를 같은 이름으로** 만들어

@@ -30,10 +30,10 @@ threads: 4
 parallel_jobs: 1
 
 # Minimum read length kept during QC filtering (NanoFilt), 0 disables filtering
-min_read_length: 0
+min_read_length: 500
 
 # Minimum mean read quality kept during QC filtering (NanoFilt), 0 disables filtering
-min_read_quality: 0
+min_read_quality: 10
 
 # Variant calling backend: "bcftools" (default, always available),
 # "medaka", or "pilon" (requires pilon_jar below).

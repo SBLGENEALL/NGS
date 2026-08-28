@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Runtime data and outputs (never commit sequence/read data)
+ui_runs/
+results/
+
+# Local Streamlit state
+.streamlit/secrets.toml

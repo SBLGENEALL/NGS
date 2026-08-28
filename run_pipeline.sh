@@ -51,9 +51,21 @@ read_cfg() {
     if [[ -z "$val" ]]; then echo "$default"; else echo "$val"; fi
 }
 
-REF_ROOT="$SCRIPT_DIR/$(read_cfg references_dir references)"
-DATA_ROOT="$SCRIPT_DIR/$(read_cfg data_dir data)"
-RESULTS_ROOT="$SCRIPT_DIR/$(read_cfg results_dir results)"
+resolve_cfg_path() {
+    local value="$1"
+    if [[ "$value" == /* ]]; then
+        echo "$value"
+    else
+        echo "$SCRIPT_DIR/$value"
+    fi
+}
+
+# Relative paths remain relative to the repository for backwards
+# compatibility. Absolute paths are accepted so the local UI can create an
+# isolated job without modifying the normal references/data/results folders.
+REF_ROOT="$(resolve_cfg_path "$(read_cfg references_dir references)")"
+DATA_ROOT="$(resolve_cfg_path "$(read_cfg data_dir data)")"
+RESULTS_ROOT="$(resolve_cfg_path "$(read_cfg results_dir results)")"
 PRESET="$(read_cfg minimap2_preset map-ont)"
 THREADS="$(read_cfg threads 4)"
 MIN_LEN="$(read_cfg min_read_length 0)"
@@ -232,7 +244,7 @@ process_one() {
     # 1. Merge reads
     local MERGED_FASTQ="$SAMPLE_DIR/${REF_NAME}.merged.fastq.gz"
     if [[ ! -s "$MERGED_FASTQ" ]]; then
-        echo "$LOG [1/5] Merging ${#FASTQ_FILES[@]} read file(s) -> $(basename "$MERGED_FASTQ")"
+        echo "$LOG [1/6] Merging ${#FASTQ_FILES[@]} read file(s) -> $(basename "$MERGED_FASTQ")"
         : > "${MERGED_FASTQ%.gz}.tmp"
         for f in "${FASTQ_FILES[@]}"; do
             if [[ "$f" == *.gz ]]; then
@@ -244,23 +256,27 @@ process_one() {
         gzip -c "${MERGED_FASTQ%.gz}.tmp" > "$MERGED_FASTQ"
         rm -f "${MERGED_FASTQ%.gz}.tmp"
     else
-        echo "$LOG [1/5] Merged reads already exist, skipping"
+        echo "$LOG [1/6] Merged reads already exist, skipping"
     fi
 
     # 2. Optional QC filtering with NanoFilt
     local READS_FOR_MAPPING="$MERGED_FASTQ"
-    if [[ "$MIN_LEN" -gt 0 || "$MIN_QUAL" -gt 0 ]] && command -v NanoFilt >/dev/null 2>&1; then
-        local FILTERED_FASTQ="$SAMPLE_DIR/${REF_NAME}.filtered.fastq.gz"
-        echo "$LOG [2/5] QC filtering (length>=$MIN_LEN, quality>=$MIN_QUAL) -> $(basename "$FILTERED_FASTQ")"
-        zcat "$MERGED_FASTQ" | NanoFilt -l "$MIN_LEN" -q "$MIN_QUAL" | gzip > "$FILTERED_FASTQ"
-        READS_FOR_MAPPING="$FILTERED_FASTQ"
+    if [[ "$MIN_LEN" -gt 0 || "$MIN_QUAL" -gt 0 ]]; then
+        if command -v NanoFilt >/dev/null 2>&1; then
+            local FILTERED_FASTQ="$SAMPLE_DIR/${REF_NAME}.filtered.fastq.gz"
+            echo "$LOG [2/6] QC filtering (length>=$MIN_LEN, quality>=$MIN_QUAL) -> $(basename "$FILTERED_FASTQ")"
+            zcat "$MERGED_FASTQ" | NanoFilt -l "$MIN_LEN" -q "$MIN_QUAL" | gzip > "$FILTERED_FASTQ"
+            READS_FOR_MAPPING="$FILTERED_FASTQ"
+        else
+            echo "$LOG [2/6] WARNING: NanoFilt not found; requested QC filtering was skipped" >&2
+        fi
     else
-        echo "$LOG [2/5] QC filtering skipped"
+        echo "$LOG [2/6] QC filtering disabled"
     fi
 
     # 3. Map to reference with minimap2, sort/index with samtools
     local SORTED_BAM="$SAMPLE_DIR/${REF_NAME}.sorted.bam"
-    echo "$LOG [3/5] Mapping -> $(basename "$SORTED_BAM")"
+    echo "$LOG [3/6] Mapping -> $(basename "$SORTED_BAM")"
     minimap2 -ax "$PRESET" -t "$THREADS" "$REF_PATH" "$READS_FOR_MAPPING" \
         | samtools sort -@ "$THREADS" -o "$SORTED_BAM" -
     samtools index "$SORTED_BAM"
@@ -269,13 +285,13 @@ process_one() {
 
     # 4. Raw samtools consensus: useful for ambiguous N inspection
     local SAMTOOLS_CONSENSUS_FASTA="$SAMPLE_DIR/${REF_NAME}.samtools.consensus.fasta"
-    echo "$LOG [4/5] Building raw samtools consensus -> $(basename "$SAMTOOLS_CONSENSUS_FASTA")"
+    echo "$LOG [4/6] Building raw samtools consensus -> $(basename "$SAMTOOLS_CONSENSUS_FASTA")"
     samtools consensus -a -f fasta "$SORTED_BAM" > "$SAMTOOLS_CONSENSUS_FASTA"
     sed -i "1s/.*/>${REF_NAME}_samtools_consensus/" "$SAMTOOLS_CONSENSUS_FASTA"
 
     # 5. Variant calling
     local VCF="$SAMPLE_DIR/${REF_NAME}.vcf.gz"
-    echo "$LOG [5/5] Calling variants ($VARIANT_CALLER) -> $(basename "$VCF")"
+    echo "$LOG [5/6] Calling variants ($VARIANT_CALLER) -> $(basename "$VCF")"
     if [[ "$VARIANT_CALLER" == "medaka" ]] && command -v medaka_haploid_variant >/dev/null 2>&1; then
         medaka_haploid_variant -i "$READS_FOR_MAPPING" -r "$REF_PATH" -o "$SAMPLE_DIR/medaka"
         cp "$SAMPLE_DIR/medaka/medaka.annotated.vcf" "$SAMPLE_DIR/${REF_NAME}.vcf" 2>/dev/null || true
@@ -303,7 +319,9 @@ process_one() {
             fi
         fi
     else
-        bcftools mpileup $BCFTOOLS_PLATFORM_OPT -f "$REF_PATH" "$SORTED_BAM" 2>/dev/null \
+        # FORMAT/DP and FORMAT/AD let the UI calculate per-call depth and
+        # alternate-allele fraction instead of relying on QUAL alone.
+        bcftools mpileup $BCFTOOLS_PLATFORM_OPT -a FORMAT/DP,FORMAT/AD -f "$REF_PATH" "$SORTED_BAM" \
             | bcftools call --ploidy 1 -mv -Oz -o "$VCF"
         bcftools index -f "$VCF"
     fi
@@ -313,11 +331,11 @@ process_one() {
     #    ambiguous/homopolymer sites remain as the reference base.
     local FINAL_CONSENSUS_FASTA="$SAMPLE_DIR/${REF_NAME}.consensus.fasta"
     if [[ -s "$VCF" ]]; then
-        echo "$LOG [6/5] Building final VCF-guided consensus -> $(basename "$FINAL_CONSENSUS_FASTA")"
+        echo "$LOG [6/6] Building final VCF-guided consensus -> $(basename "$FINAL_CONSENSUS_FASTA")"
         bcftools consensus -f "$REF_PATH" "$VCF" > "$FINAL_CONSENSUS_FASTA"
         sed -i "1s/.*/>${REF_NAME}/" "$FINAL_CONSENSUS_FASTA"
     else
-        echo "$LOG [6/5] No VCF found; copying reference as final consensus -> $(basename "$FINAL_CONSENSUS_FASTA")"
+        echo "$LOG [6/6] No VCF found; copying reference as final consensus -> $(basename "$FINAL_CONSENSUS_FASTA")"
         cp "$REF_PATH" "$FINAL_CONSENSUS_FASTA"
         sed -i "1s/.*/>${REF_NAME}/" "$FINAL_CONSENSUS_FASTA"
     fi
@@ -327,7 +345,7 @@ process_one() {
     local MAPPED MEAN_DEPTH N_COUNT
     MAPPED=$(grep "mapped (" "$SAMPLE_DIR/${REF_NAME}.flagstat.txt" | head -1)
     MEAN_DEPTH=$(awk '{sum+=$3; n++} END {if (n>0) printf "%.2f", sum/n; else print "0"}' "$SAMPLE_DIR/${REF_NAME}.depth.txt")
-    N_COUNT=$(grep -v '^>' "$SAMTOOLS_CONSENSUS_FASTA" | tr -d '\n' | grep -o 'N' | wc -l | tr -d '[:space:]')
+    N_COUNT=$(awk '!/^>/{line=$0; gsub(/[^Nn]/, "", line); n+=length(line)} END{print n+0}' "$SAMTOOLS_CONSENSUS_FASTA")
     {
         echo "# Report: $REF_NAME"
         echo ""
