@@ -8,3 +8,8 @@ results/
 
 # Local Streamlit state
 .streamlit/secrets.toml
+
+# Optional internal branding (keep company-approved assets off public GitHub)
+branding.local.json
+branding_logo.svg
+branding_logo.png
