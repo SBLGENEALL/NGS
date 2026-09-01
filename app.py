@@ -24,8 +24,7 @@ from ont_ui.batch import (
     run_batch_job,
     uploaded_samples,
 )
-from ont_ui.compare import SequenceComparisonError, compare_sequences
-from ont_ui.models import AlignmentSummary, PipelineRunResult, VariantEvent
+from ont_ui.models import PipelineRunResult, VariantEvent
 from ont_ui.pipeline import (
     PipelineExecutionError,
     PipelinePreparationError,
@@ -60,7 +59,6 @@ DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
         "circular": True,
         "edge_margin": 50,
     },
-    "Quick sequence comparison": {"circular": True},
     "Single-sample ONT analysis": {
         "threads": min(8, os.cpu_count() or 1),
         "min_length": 500,
@@ -256,49 +254,6 @@ def _variants_frame(events: tuple[VariantEvent, ...] | list[VariantEvent]) -> pd
     return pd.DataFrame(rows, columns=columns)
 
 
-def _render_quick_result(result: AlignmentSummary, reference: SequenceRecord) -> None:
-    st.divider()
-    st.subheader("Comparison result")
-    count = _variant_counts(result.variants)
-    metrics = st.columns(6)
-    metrics[0].metric("Identity", f"{result.identity:.3%}")
-    metrics[1].metric("Query coverage", f"{result.query_coverage:.2%}")
-    metrics[2].metric("SNP", count["SNP"])
-    metrics[3].metric("Insertion", count["Insertion"])
-    metrics[4].metric("Deletion", count["Deletion"])
-    metrics[5].metric("MAPQ", result.mapq)
-
-    orientation = "Forward" if result.orientation == "Forward" else "Reverse complement"
-    st.caption(
-        f"Orientation: **{orientation}** · Reference start: **{result.reference_start:,}** · "
-        f"Reference end: **{result.reference_end:,}** · Reference length: **{len(reference.sequence):,} bp**"
-    )
-    if result.query_coverage < 0.95:
-        st.warning(
-            "Less than 95% of the query aligned. Variants outside the aligned region cannot be reported."
-        )
-
-    if result.variants:
-        st.dataframe(_variants_frame(result.variants), use_container_width=True, hide_index=True)
-    else:
-        st.success("No SNP, insertion, or deletion was found in the aligned sequence.")
-
-    filename = f"{sanitize_name(reference.name)}_sequence_comparison.csv"
-    st.download_button(
-        "Download variant table (CSV)",
-        data=variants_csv(result.variants).encode("utf-8-sig"),
-        file_name=filename,
-        mime="text/csv",
-        use_container_width=False,
-    )
-    with st.expander("Alignment details"):
-        st.code(result.raw_paf, language="text")
-        st.caption(
-            "SNP means a one-base substitution (point mutation). Insertions are positioned at the "
-            "preceding reference base; deletions are positioned at the first deleted base."
-        )
-
-
 def _artifact_path(sample_dir: Path, sample_name: str, suffix: str) -> Path:
     return sample_dir / f"{sample_name}{suffix}"
 
@@ -420,67 +375,6 @@ def _render_raw_result(state: dict[str, object]) -> None:
         st.code(run.log_path.read_text(encoding="utf-8", errors="replace"), language="text")
 
 
-def _quick_compare_tab(settings: dict[str, object]) -> None:
-    st.subheader("Quick sequence comparison")
-    st.write(
-        "완성된 두 DNA sequence를 직접 비교해 SNP, insertion, deletion을 확인합니다."
-    )
-    left, right = st.columns(2)
-    with left:
-        st.markdown("#### Reference")
-        quick_ref_file = st.file_uploader(
-            "설계 Reference FASTA or text",
-            type=["fasta", "fa", "fna", "txt"],
-            key="quick_ref_file",
-            help="비교 기준이 되는 원래 plasmid/vector 설계 서열입니다.",
-        )
-        quick_ref_text = st.text_area(
-            "Or paste reference DNA",
-            height=220,
-            placeholder=">reference\nACGT...",
-            key="quick_ref_text",
-            help="파일 대신 reference sequence를 직접 붙여넣을 수 있습니다.",
-        )
-    with right:
-        st.markdown("#### Query / consensus")
-        quick_query_file = st.file_uploader(
-            "Query / consensus FASTA or text",
-            type=["fasta", "fa", "fna", "txt"],
-            key="quick_query_file",
-            help="ONT 분석으로 얻은 consensus 또는 assembled plasmid 전체 서열입니다. Raw FASTQ는 사용할 수 없습니다.",
-        )
-        quick_query_text = st.text_area(
-            "Or paste query DNA",
-            height=220,
-            placeholder=">query\nACGT...",
-            key="quick_query_text",
-            help="파일 대신 query sequence를 직접 붙여넣을 수 있습니다.",
-        )
-
-    circular = bool(settings["circular"])
-    if st.button(
-        "Sequence 비교",
-        type="primary",
-        key="quick_run",
-        help="Query를 reference에 alignment하여 SNP, insertion, deletion을 표시합니다.",
-    ):
-        try:
-            reference = _sequence_from_inputs(quick_ref_file, quick_ref_text, "reference")
-            query = _sequence_from_inputs(quick_query_file, quick_query_text, "query")
-            with st.spinner("Aligning sequences and extracting variants…"):
-                result = compare_sequences(reference, query, circular=circular)
-            st.session_state["quick_result"] = {
-                "result": result,
-                "reference": reference,
-            }
-        except (SequenceValidationError, SequenceComparisonError) as exc:
-            st.error(str(exc))
-
-    quick_state = st.session_state.get("quick_result")
-    if quick_state:
-        _render_quick_result(quick_state["result"], quick_state["reference"])
-
-
 def _result_status_html(status: str) -> str:
     css = {
         "CLEAN": "status-clean",
@@ -559,7 +453,16 @@ def _render_batch_results(result: dict[str, object], job) -> None:
 
     groups = result.get("groups", {})
     assert isinstance(groups, dict)
-    st.markdown("#### Reference-by-reference review")
+    show_details = st.checkbox(
+        "Reference별 상세 결과 표시",
+        value=False,
+        key=f"show_batch_details_{job.job_dir.name}",
+        help="필요할 때만 상세 결과 card와 variant table을 생성해 화면 속도를 유지합니다.",
+    )
+    if show_details:
+        st.markdown("#### Reference-by-reference review")
+    else:
+        groups = {}
     for reference_name, group_samples in groups.items():
         assert isinstance(group_samples, list)
         labels = ", ".join(
@@ -603,10 +506,17 @@ def _render_batch_results(result: dict[str, object], job) -> None:
     log_path = job.job_dir / "pipeline.log"
     if log_path.is_file():
         with st.expander("Analysis log · 필요할 때만 열기", expanded=False):
-            st.code(
-                log_path.read_text(encoding="utf-8", errors="replace"),
-                language="text",
+            st.caption(f"전체 log 파일: `{log_path}`")
+            show_log = st.checkbox(
+                "최근 300줄을 화면에 표시",
+                value=False,
+                key=f"show_batch_log_{job.job_dir.name}",
             )
+            if show_log:
+                lines = log_path.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
+                st.code("\n".join(lines[-300:]), language="text")
 
 
 def _batch_ont_tab(settings: dict[str, object]) -> None:
@@ -679,20 +589,26 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
 
             if grouped:
                 detected_ids = list(grouped)
-                with st.expander("Sample ID 확인/수정", expanded=False):
+                editor_rows = pd.DataFrame(
+                    [
+                        {
+                            "Detected input": sample_id,
+                            "Sample ID": sample_id,
+                            "FASTQ files": len(grouped[sample_id]),
+                        }
+                        for sample_id in detected_ids
+                    ]
+                )
+                edit_sample_ids = st.checkbox(
+                    "Sample ID 직접 수정",
+                    value=False,
+                    key=f"edit_sample_ids_{index}_{sanitize_name(reference_label)}",
+                    help="자동 인식된 이름이 실제 sample name과 다를 때만 켭니다.",
+                )
+                edited_rows = editor_rows
+                if edit_sample_ids:
                     st.caption(
-                        "자동 인식된 이름이 실제 ONT sample name과 다르면 Sample ID를 수정하세요. "
                         "여러 FASTQ chunk를 하나로 묶으려면 같은 Sample ID를 입력합니다."
-                    )
-                    editor_rows = pd.DataFrame(
-                        [
-                            {
-                                "Detected input": sample_id,
-                                "Sample ID": sample_id,
-                                "FASTQ files": len(grouped[sample_id]),
-                            }
-                            for sample_id in detected_ids
-                        ]
                     )
                     editor_key_suffix = abs(
                         hash(tuple(str(getattr(item, "name", "")) for item in uploaded_files))
@@ -811,21 +727,17 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     batch_settings,
                 )
             progress_box = st.empty()
-            with st.expander("Analysis log · 실행 중 상세 command", expanded=False):
-                log_box = st.empty()
-            log_lines: list[str] = []
+            progress_box.progress(0.0, text=f"완료 0 / {job.sample_count} samples")
             completed = 0
 
             def show_line(line: str) -> None:
                 nonlocal completed
-                log_lines.append(line)
-                log_box.code("\n".join(log_lines[-60:]), language="text")
                 if " Done: " in line:
                     completed += 1
-                progress_box.progress(
-                    min(1.0, completed / max(1, job.sample_count)),
-                    text=f"완료 {completed} / {job.sample_count} samples",
-                )
+                    progress_box.progress(
+                        min(1.0, completed / max(1, job.sample_count)),
+                        text=f"완료 {completed} / {job.sample_count} samples",
+                    )
 
             with st.spinner("Batch analysis를 실행하고 있습니다. 브라우저를 닫지 마세요…"):
                 run_batch_job(REPOSITORY_ROOT, job, on_line=show_line)
@@ -993,107 +905,89 @@ def _raw_ont_tab(settings: dict[str, object]) -> None:
         _render_raw_result(raw_state)
 
 
-def _settings_page(mode: str) -> None:
+def _settings_page() -> None:
     st.subheader("Analysis settings")
     st.caption("각 `?`에 커서를 올리면 설정 설명을 볼 수 있습니다.")
-    batch_tab, quick_tab = st.tabs(["Batch settings", "Quick comparison settings"])
-
-    with batch_tab:
-        current = _analysis_settings("Batch analysis")
-        with st.form("batch_settings_form"):
-            updated: dict[str, object] = {}
-            pipeline_col, threshold_col = st.columns(2)
-            with pipeline_col:
-                st.markdown("#### Pipeline")
-                updated["experiment_name"] = st.text_input(
-                    "Experiment name",
-                    value=str(current["experiment_name"]),
-                    help="ui_runs 아래에 생성되는 결과 폴더명입니다.",
-                )
-                updated["threads"] = st.number_input(
-                    "Threads per sample",
-                    min_value=1,
-                    max_value=64,
-                    value=int(current["threads"]),
-                    help="ONT sample 하나에 사용할 CPU threads입니다. 기본값은 8입니다.",
-                )
-                updated["parallel_jobs"] = st.number_input(
-                    "Parallel samples",
-                    min_value=1,
-                    max_value=64,
-                    value=int(current["parallel_jobs"]),
-                    help="동시에 처리할 ONT sample의 최대 개수입니다.",
-                )
-                updated["min_length"] = st.number_input(
-                    "Minimum read length",
-                    min_value=0,
-                    value=int(current["min_length"]),
-                    step=50,
-                    help="이 길이보다 짧은 read를 제외합니다. Coverage가 낮으면 300을 고려하세요.",
-                )
-                updated["min_quality"] = st.number_input(
-                    "Minimum mean Q",
-                    min_value=0,
-                    value=int(current["min_quality"]),
-                    step=1,
-                    help="평균 Phred quality가 이 값보다 낮은 read를 제외합니다.",
-                )
-            with threshold_col:
-                st.markdown("#### Variant review")
-                updated["min_variant_quality"] = st.number_input(
-                    "Minimum QUAL",
-                    min_value=0.0,
-                    value=float(current.get("min_variant_quality", 20.0)),
-                    help="이 QUAL보다 낮은 variant는 REVIEW로 표시합니다.",
-                )
-                updated["min_variant_depth"] = st.number_input(
-                    "Minimum DP",
-                    min_value=0,
-                    value=int(current.get("min_variant_depth", 10)),
-                    help="이 read depth보다 낮은 variant는 REVIEW로 표시합니다.",
-                )
-                updated["min_af"] = st.number_input(
-                    "Minimum allele fraction",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=float(current.get("min_af", 0.80)),
-                    step=0.05,
-                    help="ALT allele을 지지하는 read 비율의 PASS 기준입니다.",
-                )
-                updated["circular"] = st.checkbox(
-                    "Circular plasmid/vector",
-                    value=bool(current.get("circular", True)),
-                    help="Plasmid origin을 가로지르는 alignment와 variant 좌표를 처리합니다.",
-                )
-                updated["edge_margin"] = st.number_input(
-                    "Edge margin (bp)",
-                    min_value=0,
-                    value=int(current.get("edge_margin", 50)),
-                    help="Linear reference일 때 양 끝에서 REVIEW 처리할 범위입니다.",
-                )
-            save_batch = st.form_submit_button("Batch settings 저장", type="primary")
-        if save_batch:
-            st.session_state["saved_analysis_settings"]["Batch analysis"] = updated
-            st.success("Batch settings를 저장했습니다.")
-
-    with quick_tab:
-        current_quick = _analysis_settings("Quick sequence comparison")
-        with st.form("quick_settings_form"):
-            quick_circular = st.checkbox(
-                "Circular plasmid/vector",
-                value=bool(current_quick["circular"]),
-                help="Reference를 임시로 이어 붙여 plasmid origin을 통과하는 alignment를 허용합니다.",
+    current = _analysis_settings("Batch analysis")
+    with st.form("batch_settings_form"):
+        updated: dict[str, object] = {}
+        pipeline_col, threshold_col = st.columns(2)
+        with pipeline_col:
+            st.markdown("#### Pipeline")
+            updated["experiment_name"] = st.text_input(
+                "Experiment name",
+                value=str(current["experiment_name"]),
+                help="ui_runs 아래에 생성되는 결과 폴더명입니다.",
             )
-            save_quick = st.form_submit_button("Quick settings 저장", type="primary")
-        if save_quick:
-            st.session_state["saved_analysis_settings"]["Quick sequence comparison"] = {
-                "circular": quick_circular
-            }
-            st.success("Quick comparison settings를 저장했습니다.")
+            updated["threads"] = st.number_input(
+                "Threads per sample",
+                min_value=1,
+                max_value=64,
+                value=int(current["threads"]),
+                help="ONT sample 하나에 사용할 CPU threads입니다. 기본값은 8입니다.",
+            )
+            updated["parallel_jobs"] = st.number_input(
+                "Parallel samples",
+                min_value=1,
+                max_value=64,
+                value=int(current["parallel_jobs"]),
+                help="동시에 처리할 ONT sample의 최대 개수입니다.",
+            )
+            updated["min_length"] = st.number_input(
+                "Minimum read length",
+                min_value=0,
+                value=int(current["min_length"]),
+                step=50,
+                help="이 길이보다 짧은 read를 제외합니다. Coverage가 낮으면 300을 고려하세요.",
+            )
+            updated["min_quality"] = st.number_input(
+                "Minimum mean Q",
+                min_value=0,
+                value=int(current["min_quality"]),
+                step=1,
+                help="평균 Phred quality가 이 값보다 낮은 read를 제외합니다.",
+            )
+        with threshold_col:
+            st.markdown("#### Variant review")
+            updated["min_variant_quality"] = st.number_input(
+                "Minimum QUAL",
+                min_value=0.0,
+                value=float(current.get("min_variant_quality", 20.0)),
+                help="이 QUAL보다 낮은 variant는 REVIEW로 표시합니다.",
+            )
+            updated["min_variant_depth"] = st.number_input(
+                "Minimum DP",
+                min_value=0,
+                value=int(current.get("min_variant_depth", 10)),
+                help="이 read depth보다 낮은 variant는 REVIEW로 표시합니다.",
+            )
+            updated["min_af"] = st.number_input(
+                "Minimum allele fraction",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(current.get("min_af", 0.80)),
+                step=0.05,
+                help="ALT allele을 지지하는 read 비율의 PASS 기준입니다.",
+            )
+            updated["circular"] = st.checkbox(
+                "Circular plasmid/vector",
+                value=bool(current.get("circular", True)),
+                help="Plasmid origin을 가로지르는 alignment와 variant 좌표를 처리합니다.",
+            )
+            updated["edge_margin"] = st.number_input(
+                "Edge margin (bp)",
+                min_value=0,
+                value=int(current.get("edge_margin", 50)),
+                help="Linear reference일 때 양 끝에서 REVIEW 처리할 범위입니다.",
+            )
+        save_batch = st.form_submit_button("Batch settings 저장", type="primary")
+    if save_batch:
+        st.session_state["saved_analysis_settings"]["Batch analysis"] = updated
+        st.success("Batch settings를 저장했습니다.")
 
     st.button("← 분석 화면으로", on_click=_close_settings_page)
 
-def _sidebar() -> tuple[str, dict[str, object]]:
+def _sidebar() -> dict[str, object]:
     branding = _load_branding()
     logo = _sidebar_brand_logo()
     fallback_logo = (
@@ -1160,16 +1054,7 @@ def _sidebar() -> tuple[str, dict[str, object]]:
         )
         st.markdown("### ONT Plasmid Analyzer")
         st.caption("ONT plasmid 변이 분석")
-        mode = st.radio(
-            "분석 메뉴",
-            ["Batch analysis", "Quick sequence comparison"],
-            key="analysis_mode",
-            on_change=_close_settings_page,
-            help=(
-                "Batch analysis는 raw ONT sample을 분석합니다. Quick comparison은 완성된 "
-                "두 sequence의 차이만 빠르게 확인합니다."
-            ),
-        )
+        st.markdown("**Batch analysis**")
 
         st.button(
             "⚙ Analysis settings",
@@ -1186,7 +1071,7 @@ def _sidebar() -> tuple[str, dict[str, object]]:
             unsafe_allow_html=True,
         )
 
-    return mode, dict(_analysis_settings(mode))
+    return dict(_analysis_settings("Batch analysis"))
 
 def main() -> None:
     st.set_page_config(
@@ -1194,16 +1079,12 @@ def main() -> None:
         page_icon="🧬",
         layout="wide",
     )
-    mode, settings = _sidebar()
+    settings = _sidebar()
     _brand_header()
     if st.session_state.get("show_analysis_settings", False):
-        _settings_page(mode)
-    elif mode == "Batch analysis":
-        _batch_ont_tab(settings)
-    elif mode == "Quick sequence comparison":
-        _quick_compare_tab(settings)
+        _settings_page()
     else:
-        _raw_ont_tab(settings)
+        _batch_ont_tab(settings)
 
 
 if __name__ == "__main__":
