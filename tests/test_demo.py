@@ -11,7 +11,11 @@ class DemoDatasetTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(build_demo_batch_zip())) as archive:
             names = archive.namelist()
             references = [name for name in names if name.startswith("references/")]
-            fastqs = [name for name in names if name.endswith("/reads.fastq")]
+            fastqs = [
+                name
+                for name in names
+                if name.startswith("demo_reads/") and name.endswith(".fastq")
+            ]
             self.assertEqual(len(references), 5)
             self.assertEqual(len(fastqs), 15)
             self.assertIn("expected_mapping.csv", names)
@@ -28,7 +32,7 @@ class DemoDatasetTests(unittest.TestCase):
     def test_demo_fastq_records_have_matching_sequence_and_quality_lengths(self):
         with zipfile.ZipFile(io.BytesIO(build_demo_batch_zip())) as archive:
             text = archive.read(
-                "demo_reads/demo_plasmid_01/barcode03/reads.fastq"
+                "demo_reads/demo_plasmid_01/barcode03.fastq"
             ).decode("utf-8")
             lines = text.splitlines()
             self.assertEqual(len(lines), 12 * 4)
