@@ -25,6 +25,7 @@ from ont_ui.batch import (
     uploaded_barcodes,
 )
 from ont_ui.compare import SequenceComparisonError, compare_sequences
+from ont_ui.demo import build_demo_batch_zip
 from ont_ui.models import AlignmentSummary, PipelineRunResult, VariantEvent
 from ont_ui.pipeline import (
     PipelineExecutionError,
@@ -46,6 +47,50 @@ from ont_ui.sequences import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
+
+DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
+    "Batch plasmid analysis": {
+        "experiment_name": "ONT_plasmid_batch",
+        "threads": 8,
+        "parallel_jobs": 16,
+        "min_length": 500,
+        "min_quality": 10,
+    },
+    "Quick sequence comparison": {"circular": True},
+    "Single-sample ONT analysis": {
+        "threads": min(8, os.cpu_count() or 1),
+        "min_length": 500,
+        "min_read_quality": 10,
+        "caller": "bcftools",
+        "pilon_jar": "",
+        "pilon_mem": "16G",
+        "min_variant_quality": 20.0,
+        "min_variant_depth": 10,
+        "min_af": 0.80,
+        "circular": True,
+        "edge_margin": 50,
+    },
+}
+
+
+def _analysis_settings(mode: str) -> dict[str, object]:
+    all_settings = st.session_state.setdefault("saved_analysis_settings", {})
+    if not isinstance(all_settings, dict):
+        all_settings = {}
+        st.session_state["saved_analysis_settings"] = all_settings
+    current = all_settings.get(mode)
+    if not isinstance(current, dict):
+        current = dict(DEFAULT_ANALYSIS_SETTINGS[mode])
+        all_settings[mode] = current
+    return current
+
+
+def _close_settings_page() -> None:
+    st.session_state["show_analysis_settings"] = False
+
+
+def _open_settings_page() -> None:
+    st.session_state["show_analysis_settings"] = True
 
 
 def _load_branding() -> dict[str, str]:
@@ -111,7 +156,9 @@ def _brand_header() -> None:
             --brand-secondary: __SECONDARY__;
             --ink: #17213A;
         }
+        html { color-scheme:light; }
         .stApp { background: linear-gradient(180deg, #F6F8FC 0, #FFFFFF 240px); }
+        #MainMenu, [data-testid="stToolbar"] { visibility:hidden; }
         .brand-shell {
             display:flex; align-items:center; justify-content:space-between; gap:24px;
             padding:22px 28px; border-radius:18px; color:white; margin-bottom:20px;
@@ -432,16 +479,21 @@ def _quick_compare_tab(settings: dict[str, object]) -> None:
 
 
 def _default_batch_mapping(reference_files, barcode_names: list[str]) -> pd.DataFrame:
+    reference_names = [Path(uploaded.name).name for uploaded in reference_files]
     rows: list[dict[str, object]] = []
-    for index, uploaded in enumerate(reference_files):
-        assigned = barcode_names[index * 3 : index * 3 + 3]
+    for index, barcode in enumerate(barcode_names):
+        reference = ""
+        if reference_names:
+            reference_index = min(
+                (index * len(reference_names)) // max(1, len(barcode_names)),
+                len(reference_names) - 1,
+            )
+            reference = reference_names[reference_index]
         rows.append(
             {
                 "Order": index + 1,
-                "Reference": Path(uploaded.name).name,
-                "Barcode 1": assigned[0] if len(assigned) > 0 else "",
-                "Barcode 2": assigned[1] if len(assigned) > 1 else "",
-                "Barcode 3": assigned[2] if len(assigned) > 2 else "",
+                "Barcode": barcode,
+                "Reference": reference,
             }
         )
     return pd.DataFrame(rows)
@@ -484,7 +536,7 @@ def _render_batch_results(result: dict[str, object], job) -> None:
         summary_rows.append(
             {
                 "Reference": sample.get("reference_name"),
-                "Replicate": sample.get("replicate"),
+                "Sample #": sample.get("replicate"),
                 "Barcode": sample.get("barcode"),
                 "Status": sample.get("status"),
                 "Mapping rate (%)": (
@@ -532,72 +584,102 @@ def _render_batch_results(result: dict[str, object], job) -> None:
             f"{sample.get('barcode')}: {sample.get('status')}" for sample in group_samples
         )
         with st.expander(f"{reference_name}  ·  {labels}"):
-            columns = st.columns(max(1, len(group_samples)))
-            for column, sample in zip(columns, group_samples):
-                with column:
-                    st.markdown(_result_status_html(str(sample.get("status"))), unsafe_allow_html=True)
-                    st.write(f"**{sample.get('barcode')} · Replicate {sample.get('replicate')}**")
-                    if sample.get("status") == "ERROR":
-                        st.error(str(sample.get("message", "Analysis failed.")))
-                        continue
-                    mapping_rate = sample.get("mapping_rate")
-                    st.metric("Mapping", f"{float(mapping_rate):.1%}" if mapping_rate is not None else "N/A")
-                    st.metric("Mean depth", f"{float(sample.get('mean_depth', 0)):.1f}×")
-                    st.write(
-                        f"SNP **{sample.get('snp', 0)}** · INS **{sample.get('insertion', 0)}** · "
-                        f"DEL **{sample.get('deletion', 0)}**"
-                    )
-                    details = sample.get("variant_details", [])
-                    if details:
-                        st.dataframe(pd.DataFrame(details), hide_index=True, use_container_width=True)
+            for start in range(0, len(group_samples), 3):
+                sample_row = group_samples[start : start + 3]
+                columns = st.columns(len(sample_row))
+                for column, sample in zip(columns, sample_row):
+                    with column:
+                        st.markdown(
+                            _result_status_html(str(sample.get("status"))),
+                            unsafe_allow_html=True,
+                        )
+                        st.write(
+                            f"**{sample.get('barcode')} · Sample {sample.get('replicate')}**"
+                        )
+                        if sample.get("status") == "ERROR":
+                            st.error(str(sample.get("message", "Analysis failed.")))
+                            continue
+                        mapping_rate = sample.get("mapping_rate")
+                        st.metric(
+                            "Mapping",
+                            f"{float(mapping_rate):.1%}"
+                            if mapping_rate is not None
+                            else "N/A",
+                        )
+                        st.metric("Mean depth", f"{float(sample.get('mean_depth', 0)):.1f}×")
+                        st.write(
+                            f"SNP **{sample.get('snp', 0)}** · INS **{sample.get('insertion', 0)}** · "
+                            f"DEL **{sample.get('deletion', 0)}**"
+                        )
+                        details = sample.get("variant_details", [])
+                        if details:
+                            st.dataframe(
+                                pd.DataFrame(details), hide_index=True, use_container_width=True
+                            )
 
 
 def _batch_ont_tab(settings: dict[str, object]) -> None:
-    reference_count = int(settings["reference_count"])
-    expected_sample_count = reference_count * 3
-    st.subheader(f"{reference_count}-plasmid / {expected_sample_count}-barcode batch analysis")
+    expected_sample_count = int(settings["sample_count"])
+    st.subheader(f"{expected_sample_count}-sample batch analysis")
     st.write(
-        "Upload reference sequences and the completed ONT barcode directory. Barcodes are sorted "
-        "numerically and assigned three at a time; review or edit the mapping before running."
+        "Upload any number of reference sequences and the planned ONT barcode samples. "
+        "Each barcode can be assigned independently to any uploaded reference before analysis."
     )
     st.info(
-        "Recommended workflow: select the run folder that contains barcode13, barcode14, … folders. "
-        "The folder hierarchy is used to identify each barcode automatically."
+        "Select the run folder containing barcode01, barcode02, … folders. The folder hierarchy "
+        "is used only to identify barcode samples; reference assignments remain fully editable."
     )
+
+    with st.expander("Try the included 5-reference / 15-sample demo"):
+        st.write(
+            "Download and unzip the demo. Set **Number of samples** to **15**, upload the five files "
+            "inside the references folder, and select the demo_reads directory for the barcode upload."
+        )
+        st.download_button(
+            "Download demo dataset (ZIP)",
+            data=build_demo_batch_zip(),
+            file_name="ONT_plasmid_demo_5ref_15samples.zip",
+            mime="application/zip",
+            key="download_batch_demo",
+            help="Synthetic test data only; do not use these sequences as biological controls.",
+        )
 
     upload_columns = st.columns(2)
     with upload_columns[0]:
         st.markdown("#### 1 · Reference sequences")
         reference_uploads = st.file_uploader(
-            f"Drag {reference_count} reference file(s)",
+            "Drag all reference files for this run",
             type=["fasta", "fa", "fna", "txt"],
             accept_multiple_files=True,
             key="batch_references",
             help=(
-                f"Upload exactly {reference_count} reference file(s). The file name becomes the "
-                "plasmid/reference name in the final report."
+                "Upload one or more reference sequences. There is no fixed relationship between "
+                "the number of references and the number of barcode samples."
             ),
         )
     with upload_columns[1]:
-        st.markdown("#### 2 · ONT barcode directory")
+        st.markdown("#### 2 · ONT barcode samples")
         read_uploads = st.file_uploader(
             "Select or drag the directory containing barcode folders",
             type=["fastq", "fq", "gz"],
             accept_multiple_files="directory",
             key="batch_reads",
-            help="Select a parent folder that contains barcode01, barcode02, ... subfolders.",
+            help="Select a parent folder containing barcode01, barcode02, ... subfolders.",
         )
 
     reference_uploads = list(reference_uploads or [])
     read_uploads = list(read_uploads or [])
     grouped_reads = uploaded_barcodes(read_uploads)
     barcode_names = list(grouped_reads)
+    reference_names = [Path(item.name).name for item in reference_uploads]
     reference_signature = tuple((item.name, item.size) for item in reference_uploads)
     read_signature = tuple((item.name, item.size) for item in read_uploads)
     batch_signature = (reference_signature, read_signature)
 
     validation_errors: list[str] = []
     reference_rows: list[dict[str, object]] = []
+    if len(set(reference_names)) != len(reference_names):
+        validation_errors.append("Reference file names must be unique.")
     for item in reference_uploads:
         try:
             record = parse_uploaded_reference(item)
@@ -608,17 +690,18 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             validation_errors.append(str(exc))
 
     upload_metrics = st.columns(4)
-    upload_metrics[0].metric("References", f"{len(reference_uploads)} / {reference_count}")
-    upload_metrics[1].metric("Detected barcodes", f"{len(barcode_names)} / {expected_sample_count}")
+    upload_metrics[0].metric("Reference files", len(reference_uploads))
+    upload_metrics[1].metric(
+        "Detected samples", f"{len(barcode_names)} / {expected_sample_count}"
+    )
     upload_metrics[2].metric("Planned samples", expected_sample_count)
     upload_metrics[3].metric("Uploaded FASTQ files", len(read_uploads))
 
-    if reference_uploads and len(reference_uploads) != reference_count:
+    if barcode_names and len(barcode_names) != expected_sample_count:
         st.warning(
-            f"The sidebar is set to {reference_count} reference(s), but "
-            f"{len(reference_uploads)} file(s) were uploaded."
+            f"The sidebar is set to {expected_sample_count} sample(s), but "
+            f"{len(barcode_names)} barcode folder(s) were detected."
         )
-
     if reference_rows:
         with st.expander("Reference file check"):
             st.dataframe(pd.DataFrame(reference_rows), hide_index=True, use_container_width=True)
@@ -626,19 +709,22 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         st.error(error)
     if read_uploads and not grouped_reads:
         st.error(
-            "No barcode folder name was detected. Select the parent directory that contains "
-            "barcode01/barcode02/... folders rather than selecting FASTQ files individually."
+            "No barcode folder name was detected. Select the parent directory containing "
+            "barcode01/barcode02/... folders rather than individual FASTQ files."
         )
 
     if st.session_state.get("batch_signature") != batch_signature:
         st.session_state["batch_signature"] = batch_signature
-        st.session_state["batch_mapping"] = _default_batch_mapping(reference_uploads, barcode_names)
+        st.session_state["batch_mapping"] = _default_batch_mapping(
+            reference_uploads, barcode_names
+        )
+        st.session_state.pop("batch_mapping_editor", None)
 
     if reference_uploads and barcode_names:
-        st.markdown("#### 3 · Review reference ↔ barcode mapping")
+        st.markdown("#### 3 · Match each sample to a reference")
         st.caption(
-            "References are shown in upload order and barcodes are assigned numerically in groups of three. "
-            "Change Order or any barcode cell if the experimental order is different."
+            "One row represents one barcode sample. The initial assignment is balanced across the "
+            "uploaded references; select the correct reference for every row before running."
         )
         mapping_frame = st.session_state.get("batch_mapping")
         if not isinstance(mapping_frame, pd.DataFrame):
@@ -654,79 +740,92 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     min_value=1,
                     step=1,
                     required=True,
-                    help="Analysis and report order for the reference.",
+                    help="Analysis and report order for the barcode sample.",
                 ),
-                "Reference": st.column_config.TextColumn(
-                    disabled=True, help="Reference file name used in the result report."
+                "Barcode": st.column_config.TextColumn(
+                    disabled=True,
+                    help="Barcode folder detected from the uploaded ONT directory.",
                 ),
-                "Barcode 1": st.column_config.SelectboxColumn(
-                    options=barcode_names, required=True, help="First ONT replicate for this plasmid."
-                ),
-                "Barcode 2": st.column_config.SelectboxColumn(
-                    options=barcode_names, required=True, help="Second ONT replicate for this plasmid."
-                ),
-                "Barcode 3": st.column_config.SelectboxColumn(
-                    options=barcode_names, required=True, help="Third ONT replicate for this plasmid."
+                "Reference": st.column_config.SelectboxColumn(
+                    options=reference_names,
+                    required=True,
+                    help="Choose the reference sequence used to analyze this barcode sample.",
                 ),
             },
         )
         st.session_state["batch_mapping"] = edited
 
         sorted_mapping = edited.sort_values("Order", kind="stable")
-        assigned = [
+        assigned_barcodes = [
             str(value)
-            for column in ("Barcode 1", "Barcode 2", "Barcode 3")
-            for value in sorted_mapping[column].tolist()
+            for value in sorted_mapping["Barcode"].tolist()
             if str(value) not in {"", "nan", "None"}
         ]
-        invalid_assignments = sorted(
-            {value for value in assigned if value not in barcode_names}, key=natural_key
+        assigned_references = [
+            str(value)
+            for value in sorted_mapping["Reference"].tolist()
+            if str(value) not in {"", "nan", "None"}
+        ]
+        invalid_barcodes = sorted(
+            {value for value in assigned_barcodes if value not in barcode_names},
+            key=natural_key,
         )
-        duplicates = sorted({value for value in assigned if assigned.count(value) > 1}, key=natural_key)
-        missing = sorted(set(barcode_names) - set(assigned), key=natural_key)
-        expected_assignment_count = expected_sample_count
-        if invalid_assignments or len(assigned) != expected_assignment_count:
-            st.error(
-                f"Every reference needs three valid barcodes ({expected_assignment_count} total assignments)."
-            )
+        invalid_references = sorted(
+            {value for value in assigned_references if value not in reference_names},
+            key=natural_key,
+        )
+        duplicates = sorted(
+            {
+                value
+                for value in assigned_barcodes
+                if assigned_barcodes.count(value) > 1
+            },
+            key=natural_key,
+        )
+        missing = sorted(set(barcode_names) - set(assigned_barcodes), key=natural_key)
+        unused_references = sorted(set(reference_names) - set(assigned_references), key=natural_key)
+
+        if len(assigned_references) != len(barcode_names):
+            st.error("Choose one valid reference for every barcode sample.")
+        if invalid_barcodes:
+            st.error("Invalid barcode assignments: " + ", ".join(invalid_barcodes))
+        if invalid_references:
+            st.error("Invalid reference assignments: " + ", ".join(invalid_references))
         if duplicates:
-            st.error("Duplicate assignments: " + ", ".join(duplicates))
+            st.error("Duplicate barcode rows: " + ", ".join(duplicates))
         if missing:
-            st.warning("Uploaded but not assigned: " + ", ".join(missing))
-        if len(barcode_names) != expected_sample_count:
-            st.warning(
-                f"The selected 3-per-reference layout expects {expected_sample_count} barcodes, "
-                f"but {len(barcode_names)} were detected. You can still edit and run the mapping."
-            )
+            st.error("Uploaded but not assigned: " + ", ".join(missing))
+        if unused_references:
+            st.warning("Uploaded references not currently used: " + ", ".join(unused_references))
 
         can_run = (
             not validation_errors
             and not duplicates
-            and not invalid_assignments
-            and len(reference_uploads) == reference_count
-            and len(assigned) == expected_assignment_count
+            and not invalid_barcodes
+            and not invalid_references
+            and not missing
+            and len(barcode_names) == expected_sample_count
+            and len(assigned_barcodes) == expected_sample_count
+            and len(assigned_references) == expected_sample_count
         )
         if st.button(
-            f"Run batch analysis ({len(assigned)} samples)",
+            f"Run batch analysis ({len(assigned_barcodes)} samples)",
             type="primary",
             disabled=not can_run,
             key="batch_run",
             use_container_width=True,
-            help="Run all mapped barcode samples with the Analysis settings selected in the sidebar.",
+            help="Run all mapped barcode samples with the saved Analysis settings.",
         ):
             try:
-                mappings = []
+                grouped_mapping: dict[str, list[str]] = {}
                 for _, row in sorted_mapping.iterrows():
-                    mappings.append(
-                        {
-                            "reference": str(row["Reference"]),
-                            "barcodes": [
-                                str(row["Barcode 1"]),
-                                str(row["Barcode 2"]),
-                                str(row["Barcode 3"]),
-                            ],
-                        }
+                    grouped_mapping.setdefault(str(row["Reference"]), []).append(
+                        str(row["Barcode"])
                     )
+                mappings = [
+                    {"reference": reference, "barcodes": barcodes}
+                    for reference, barcodes in grouped_mapping.items()
+                ]
                 missing_tools = [
                     executable
                     for executable in ("bash", "minimap2", "samtools", "bcftools")
@@ -783,7 +882,6 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     batch_state = st.session_state.get("batch_result")
     if batch_state:
         _render_batch_results(batch_state["result"], batch_state["job"])
-
 
 def _raw_ont_tab(settings: dict[str, object]) -> None:
     st.subheader("Raw Oxford Nanopore read analysis")
@@ -934,26 +1032,207 @@ def _raw_ont_tab(settings: dict[str, object]) -> None:
         _render_raw_result(raw_state)
 
 
+def _settings_page(mode: str) -> None:
+    current = _analysis_settings(mode)
+    st.subheader("Analysis settings")
+    st.caption(f"Settings for **{mode}**. Hover over each `?` icon for an explanation.")
+
+    with st.form(f"settings_form_{mode}"):
+        updated: dict[str, object] = {}
+        if mode == "Batch plasmid analysis":
+            first, second = st.columns(2)
+            with first:
+                updated["experiment_name"] = st.text_input(
+                    "Experiment name",
+                    value=str(current["experiment_name"]),
+                    help="Name of the output folder created under ui_runs.",
+                )
+                updated["threads"] = st.number_input(
+                    "Threads per sample",
+                    min_value=1,
+                    max_value=64,
+                    value=int(current["threads"]),
+                    help="CPU threads assigned to each barcode sample. Eight is a safe default.",
+                )
+                updated["parallel_jobs"] = st.number_input(
+                    "Parallel samples",
+                    min_value=1,
+                    max_value=96,
+                    value=int(current["parallel_jobs"]),
+                    help="Maximum number of barcode samples processed at the same time.",
+                )
+            with second:
+                updated["min_length"] = st.number_input(
+                    "Minimum read length",
+                    min_value=0,
+                    value=int(current["min_length"]),
+                    step=50,
+                    help="Reads shorter than this length are removed. Use 300 if coverage is low.",
+                )
+                updated["min_quality"] = st.number_input(
+                    "Minimum mean Q",
+                    min_value=0,
+                    value=int(current["min_quality"]),
+                    step=1,
+                    help="Reads below this mean Phred quality score are removed. Use Q8 if coverage is low.",
+                )
+        elif mode == "Quick sequence comparison":
+            updated["circular"] = st.checkbox(
+                "Circular plasmid/vector",
+                value=bool(current["circular"]),
+                help=(
+                    "Temporarily doubles the reference during alignment so variants spanning the "
+                    "plasmid origin can be detected, then restores the original coordinates."
+                ),
+            )
+        else:
+            filter_col, review_col = st.columns(2)
+            with filter_col:
+                st.markdown("#### Read filtering and caller")
+                updated["threads"] = st.number_input(
+                    "CPU threads",
+                    min_value=1,
+                    max_value=max(1, os.cpu_count() or 1),
+                    value=int(current["threads"]),
+                    help="CPU threads used for this single sample.",
+                )
+                updated["min_length"] = st.number_input(
+                    "Minimum read length",
+                    min_value=0,
+                    value=int(current["min_length"]),
+                    step=50,
+                    help="Reads shorter than this value are removed. Use 300 if coverage is low.",
+                )
+                updated["min_read_quality"] = st.number_input(
+                    "Minimum mean Q",
+                    min_value=0,
+                    value=int(current["min_read_quality"]),
+                    step=1,
+                    help="Reads below this mean Phred score are removed. Use Q8 if coverage is low.",
+                )
+                caller_options = ["bcftools", "medaka", "pilon"]
+                caller_value = str(current["caller"])
+                updated["caller"] = st.selectbox(
+                    "Variant caller",
+                    caller_options,
+                    index=caller_options.index(caller_value) if caller_value in caller_options else 0,
+                    help="bcftools is lightweight. Medaka and Pilon require separate installations.",
+                )
+                updated["pilon_jar"] = str(current.get("pilon_jar", ""))
+                updated["pilon_mem"] = str(current.get("pilon_mem", "16G"))
+                if updated["caller"] == "pilon":
+                    updated["pilon_jar"] = st.text_input(
+                        "Pilon JAR path",
+                        value=str(current.get("pilon_jar", "")),
+                        help="Full Linux path to the installed pilon.jar file.",
+                    )
+                    updated["pilon_mem"] = st.text_input(
+                        "Pilon Java memory",
+                        value=str(current.get("pilon_mem", "16G")),
+                        help="Maximum Java heap memory allocated to Pilon.",
+                    )
+            with review_col:
+                st.markdown("#### Variant review thresholds")
+                updated["min_variant_quality"] = st.number_input(
+                    "Minimum QUAL",
+                    min_value=0.0,
+                    value=float(current["min_variant_quality"]),
+                    help="Calls below this variant quality score are marked REVIEW.",
+                )
+                updated["min_variant_depth"] = st.number_input(
+                    "Minimum DP",
+                    min_value=0,
+                    value=int(current["min_variant_depth"]),
+                    help="Calls supported by fewer reads than this depth are marked REVIEW.",
+                )
+                updated["min_af"] = st.number_input(
+                    "Minimum allele fraction",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=float(current["min_af"]),
+                    step=0.05,
+                    help="Minimum alternative-allele fraction required for PASS status.",
+                )
+                updated["circular"] = st.checkbox(
+                    "Circular reference",
+                    value=bool(current["circular"]),
+                    help="Enable for plasmids so origin-spanning alignments are handled as circular.",
+                )
+                updated["edge_margin"] = st.number_input(
+                    "Edge margin (bp)",
+                    min_value=0,
+                    value=int(current["edge_margin"]),
+                    disabled=not bool(updated["circular"]),
+                    help="Calls this close to a linear reference edge are marked for review.",
+                )
+
+        submitted = st.form_submit_button("Save settings", type="primary")
+    if submitted:
+        all_settings = st.session_state["saved_analysis_settings"]
+        all_settings[mode] = updated
+        st.success("Analysis settings were saved for this session.")
+    st.button("← Back to analysis", on_click=_close_settings_page)
+
+
 def _sidebar() -> tuple[str, dict[str, object]]:
     branding = _load_branding()
     logo = _sidebar_brand_logo()
+    fallback_logo = (
+        f'<div class="sidebar-brand-wordmark">{html.escape(branding["organization"])}</div>'
+    )
     with st.sidebar:
         st.markdown(
             """
             <style>
+            [data-testid="stSidebar"] {
+                background:
+                    radial-gradient(circle at 78% 18%, rgba(212,180,255,.72), transparent 31%),
+                    linear-gradient(155deg, #172EAE 0%, #4A38D0 53%, #A978EE 100%);
+            }
+            [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+                padding-bottom:155px;
+            }
+            [data-testid="stSidebar"] h1,
+            [data-testid="stSidebar"] h2,
+            [data-testid="stSidebar"] h3,
+            [data-testid="stSidebar"] h4,
+            [data-testid="stSidebar"] p,
+            [data-testid="stSidebar"] label,
+            [data-testid="stSidebar"] span {
+                color:#FFFFFF;
+            }
+            [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+                color:rgba(255,255,255,.76);
+            }
+            [data-testid="stSidebar"] [data-testid="stNumberInput"] input {
+                background:rgba(255,255,255,.96);
+                color:#17213A;
+            }
+            [data-testid="stSidebar"] button {
+                background:rgba(255,255,255,.14);
+                color:#FFFFFF;
+                border-color:rgba(255,255,255,.38);
+            }
+            [data-testid="stSidebar"] button:hover {
+                background:rgba(255,255,255,.23);
+                border-color:rgba(255,255,255,.72);
+            }
             .sidebar-brand-footer {
-                width:100%; box-sizing:border-box; padding:12px 14px 10px;
-                margin-top:24px;
-                background:rgba(255,255,255,.96); border:1px solid #E3E8F3;
-                border-radius:12px; box-shadow:0 6px 20px rgba(23,33,58,.08);
+                position:fixed; left:1rem; bottom:1rem; width:19rem;
+                box-sizing:border-box; z-index:999;
             }
             .sidebar-brand-logo {
-                display:block; width:100%; max-width:210px; max-height:58px;
-                margin:0 auto 8px; object-fit:contain;
+                display:block; width:100%; height:76px; object-fit:cover;
+                object-position:center; border-radius:12px;
+                box-shadow:0 8px 24px rgba(16,25,90,.22);
+            }
+            .sidebar-brand-wordmark {
+                color:#FFFFFF; font:700 17px/1.2 Arial,sans-serif;
+                letter-spacing:.04em; text-align:center; padding:18px 8px 10px;
             }
             .sidebar-brand-credit {
-                color:#667085; font:500 11px/1.35 "Segoe UI",Arial,sans-serif;
-                text-align:center;
+                color:rgba(255,255,255,.88); font:500 11px/1.35 "Segoe UI",Arial,sans-serif;
+                text-align:center; margin-top:7px;
             }
             </style>
             """,
@@ -961,192 +1240,55 @@ def _sidebar() -> tuple[str, dict[str, object]]:
         )
         st.markdown("### ONT Plasmid Analyzer")
         st.caption("Local ONT plasmid variant analysis")
-
         mode = st.radio(
             "Analysis menu",
             ["Batch plasmid analysis", "Quick sequence comparison", "Single-sample ONT analysis"],
             key="analysis_mode",
+            on_change=_close_settings_page,
             help=(
-                "Batch maps three barcode replicates to each plasmid. Quick comparison aligns two "
-                "assembled sequences. Single-sample runs the complete ONT read pipeline."
+                "Batch maps uploaded barcode samples to their references. Quick comparison aligns "
+                "two assembled sequences. Single-sample runs the complete ONT read pipeline."
             ),
         )
 
-        settings: dict[str, object] = {}
+        sample_count = int(st.session_state.get("planned_sample_count", 1))
         if mode == "Batch plasmid analysis":
             st.markdown("#### Run setup")
-            reference_count = st.number_input(
-                "Number of references",
-                min_value=1,
-                max_value=32,
-                value=1,
-                step=1,
-                key="batch_reference_count",
-                help=(
-                    "Select how many different plasmids will be analyzed in this run. "
-                    "Each reference is matched to three barcode samples."
-                ),
-            )
-            st.caption(f"{int(reference_count)} references × 3 replicates = {int(reference_count) * 3} samples")
-            st.markdown("#### Analysis settings")
-            with st.expander("Batch pipeline", expanded=True):
-                settings["experiment_name"] = st.text_input(
-                    "Experiment name",
-                    value="ONT_plasmid_batch",
-                    key="batch_experiment_name",
-                    help="Name of the output folder created under ui_runs.",
-                )
-                settings["threads"] = st.number_input(
-                    "Threads per sample",
-                    min_value=1,
-                    max_value=64,
-                    value=8,
-                    key="batch_threads",
-                    help="CPU threads assigned to each barcode sample. Eight is a safe default.",
-                )
-                settings["parallel_jobs"] = st.number_input(
-                    "Parallel samples",
+            sample_count = int(
+                st.number_input(
+                    "Number of samples",
                     min_value=1,
                     max_value=96,
-                    value=16,
-                    key="batch_parallel_jobs",
+                    value=sample_count,
+                    step=1,
                     help=(
-                        "Maximum number of barcode samples processed at the same time. Reduce this "
-                        "on a laptop or a low-memory system."
+                        "Select the total number of barcode samples in this run. References and "
+                        "replicate counts are assigned freely in the mapping table."
                     ),
                 )
-                settings["min_length"] = st.number_input(
-                    "Minimum read length",
-                    min_value=0,
-                    value=500,
-                    step=50,
-                    key="batch_min_length",
-                    help="Reads shorter than this length are removed before mapping. Use 300 if coverage is low.",
-                )
-                settings["min_quality"] = st.number_input(
-                    "Minimum mean Q",
-                    min_value=0,
-                    value=10,
-                    step=1,
-                    key="batch_min_quality",
-                    help="Reads below this mean Phred quality score are removed. Use Q8 if coverage is low.",
-                )
-            settings["reference_count"] = int(reference_count)
-        elif mode == "Quick sequence comparison":
-            st.markdown("#### Analysis settings")
-            with st.expander("Sequence alignment", expanded=True):
-                settings["circular"] = st.checkbox(
-                    "Circular plasmid/vector",
-                    value=True,
-                    key="quick_circular",
-                    help=(
-                        "Temporarily doubles the reference during alignment so variants spanning the "
-                        "plasmid origin can be detected, then restores the original coordinates."
-                    ),
-                )
-        else:
-            st.markdown("#### Analysis settings")
-            with st.expander("Read filtering and caller", expanded=True):
-                settings["threads"] = st.number_input(
-                    "CPU threads",
-                    min_value=1,
-                    max_value=max(1, os.cpu_count() or 1),
-                    value=min(8, os.cpu_count() or 1),
-                    key="raw_threads",
-                    help="CPU threads used for this single sample.",
-                )
-                settings["min_length"] = st.number_input(
-                    "Minimum read length",
-                    min_value=0,
-                    value=500,
-                    step=50,
-                    key="raw_min_length",
-                    help="Reads shorter than this value are removed. Use 300 if coverage is low.",
-                )
-                settings["min_read_quality"] = st.number_input(
-                    "Minimum mean Q",
-                    min_value=0,
-                    value=10,
-                    step=1,
-                    key="raw_min_quality",
-                    help="Reads below this mean Phred score are removed. Use Q8 if coverage is low.",
-                )
-                caller_label = st.selectbox(
-                    "Variant caller",
-                    ["bcftools (recommended)", "medaka", "pilon"],
-                    key="raw_caller",
-                    help="bcftools is the default lightweight caller. Medaka and Pilon require separate installations.",
-                )
-                settings["caller"] = caller_label.split()[0]
-                if settings["caller"] == "pilon":
-                    settings["pilon_jar"] = st.text_input(
-                        "Pilon JAR path",
-                        key="raw_pilon_jar",
-                        help="Full Linux path to the installed pilon.jar file.",
-                    )
-                    settings["pilon_mem"] = st.text_input(
-                        "Pilon Java memory",
-                        value="16G",
-                        key="raw_pilon_mem",
-                        help="Maximum Java heap memory allocated to Pilon.",
-                    )
-            with st.expander("Variant review thresholds", expanded=False):
-                settings["min_variant_quality"] = st.number_input(
-                    "Minimum QUAL",
-                    min_value=0.0,
-                    value=20.0,
-                    key="raw_variant_quality",
-                    help="Calls below this variant quality score are marked REVIEW.",
-                )
-                settings["min_variant_depth"] = st.number_input(
-                    "Minimum DP",
-                    min_value=0,
-                    value=10,
-                    key="raw_variant_depth",
-                    help="Calls supported by fewer reads than this depth are marked REVIEW.",
-                )
-                settings["min_af"] = st.number_input(
-                    "Minimum allele fraction",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=0.80,
-                    step=0.05,
-                    key="raw_variant_af",
-                    help="Minimum fraction of reads supporting the alternative allele for PASS status.",
-                )
-                settings["circular"] = st.checkbox(
-                    "Circular reference",
-                    value=True,
-                    key="raw_circular",
-                    help="Enable for plasmids so origin-spanning alignments are handled as circular.",
-                )
-                settings["edge_margin"] = st.number_input(
-                    "Edge margin (bp)",
-                    min_value=0,
-                    value=50,
-                    disabled=not bool(settings["circular"]),
-                    key="raw_edge_margin",
-                    help="Calls this close to a linear reference edge are marked for review.",
-                )
+            )
+            st.session_state["planned_sample_count"] = sample_count
+            st.caption(f"Plan: {sample_count} barcode sample(s)")
 
-        st.divider()
-        with st.expander("System status", expanded=False):
-            tool_states = [
-                f"{'✓' if shutil.which(executable) else '✕'} {executable}"
-                for executable in ("minimap2", "samtools", "bcftools", "NanoFilt")
-            ]
-            st.caption(" · ".join(tool_states))
-            st.caption(f"Results: `{UI_RUN_ROOT}`")
+        st.button(
+            "⚙ Analysis settings",
+            use_container_width=True,
+            on_click=_open_settings_page,
+            help="Open the settings for the selected analysis in the center workspace.",
+        )
         st.markdown(
             (
                 '<div class="sidebar-brand-footer">'
-                f'{logo}<div class="sidebar-brand-credit">'
+                f'{logo or fallback_logo}<div class="sidebar-brand-credit">'
                 f'Distributed by {html.escape(branding["distributed_by"])}</div></div>'
             ),
             unsafe_allow_html=True,
         )
-    return mode, settings
 
+    settings = dict(_analysis_settings(mode))
+    if mode == "Batch plasmid analysis":
+        settings["sample_count"] = sample_count
+    return mode, settings
 
 def main() -> None:
     st.set_page_config(
@@ -1156,7 +1298,9 @@ def main() -> None:
     )
     mode, settings = _sidebar()
     _brand_header()
-    if mode == "Batch plasmid analysis":
+    if st.session_state.get("show_analysis_settings", False):
+        _settings_page(mode)
+    elif mode == "Batch plasmid analysis":
         _batch_ont_tab(settings)
     elif mode == "Quick sequence comparison":
         _quick_compare_tab(settings)
