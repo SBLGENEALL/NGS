@@ -40,6 +40,30 @@ NanoFilt --version
 
 ## 2. UI 실행
 
+### 아이콘으로 실행
+
+Linux desktop에서는 최초 한 번만 다음을 실행합니다.
+
+```bash
+cd /data/user/MCET03/04_ONT/NGS_ONT
+chmod +x launch_ui.sh install_linux_launcher.sh run_ui.sh
+./install_linux_launcher.sh
+```
+
+이후 바탕화면의 **ONT Plasmid Analyzer** 아이콘을 클릭하면 `NGS_env` 탐색,
+UI 실행 및 브라우저 열기가 자동으로 진행됩니다. 기본 포트는 `8502`입니다.
+
+Windows + WSL 환경에서는 프로젝트의 `Launch_ONT_UI.cmd`를 바탕화면으로 복사한 뒤
+더블클릭합니다. 기본 WSL 프로젝트 경로는 `~/NGS_ONT_batch`입니다.
+
+Windows에서 회사 Linux server에 SSH로 접속하는 환경은
+`Launch_ONT_UI_Remote.cmd.example`을 복사해 `.example`을 제거하고, 파일 안의
+`SERVER_HOST`만 실제 server IP로 변경합니다. 더블클릭하면 SSH tunnel, `NGS_env`,
+UI 및 `localhost:8502` 브라우저가 순서대로 실행됩니다. 열린 SSH 창은 분석 중
+닫지 않아야 합니다.
+
+### 명령어로 실행
+
 ```bash
 conda activate /home/MCET03/conda_envs/NGS_env
 cd /data/user/MCET03/04_ONT/NGS_ONT
@@ -66,18 +90,17 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 ## 3. Batch analysis (권장)
 
-1. 왼쪽 `분석 메뉴`에서 **Batch analysis**를 선택합니다.
-2. 필요한 reference FASTA를 첫 번째 업로드 영역에 모두 드래그합니다.
-3. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
+1. 필요한 reference FASTA를 첫 번째 업로드 영역에 모두 드래그합니다.
+2. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
    `Reference file check`에서 정렬된 파일명과 길이를 확인합니다.
-4. Reference 파일명별로 생성된 영역에 해당 FASTQ 파일 또는 sample 폴더를 그대로
+3. Reference 파일명별로 생성된 영역에 해당 FASTQ 파일 또는 sample 폴더를 그대로
    드래그합니다. 별도의 입력 형식 선택은 필요하지 않습니다.
-5. 필요하면 `Sample ID 확인/수정`을 열어 자동 인식된 ONT sample name을 수정합니다.
+4. 필요하면 `Sample ID 직접 수정`을 켜서 자동 인식된 ONT sample name을 수정합니다.
    여러 FASTQ chunk에 같은 Sample ID를 입력하면 하나의 sample로 합쳐 분석합니다.
-6. `분석 전 최종 확인`에서 reference별 Sample ID와 FASTQ 개수를 확인합니다.
-7. 왼쪽의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 `Batch settings`에서
+5. `분석 전 최종 확인`에서 reference별 Sample ID와 FASTQ 개수를 확인합니다.
+6. 왼쪽의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 설정 화면에서
    CPU, 병렬 sample 수, read filter 및 variant review 기준을 저장할 수 있습니다.
-8. 중복·누락 경고가 없는지 확인한 뒤 `Batch analysis 실행`을 누릅니다.
+7. 중복·누락 경고가 없는지 확인한 뒤 `Batch analysis 실행`을 누릅니다.
 
 각 입력 항목의 `?`에 커서를 올리면 설정 의미와 권장 사용법을 확인할 수 있습니다.
 
@@ -92,36 +115,7 @@ Sample ID는 `barcode13` 같은 번호, ONT sample alias 폴더명 또는 FASTQ 
 > 디렉터리 업로드를 위해 Streamlit 1.57 이상이 필요합니다. FASTQ는 브라우저를
 > 통해 서버로 전송되므로 분석 중 브라우저 탭을 닫지 마세요.
 
-## 4. Quick FASTA comparison
-
-왼쪽 `분석 메뉴`에서 **Quick sequence comparison**을 선택한 뒤 reference와
-query/consensus를 각각 FASTA 업로드 또는 서열 붙여넣기로 입력합니다.
-
-- **Reference**: 원래 설계한 plasmid/vector의 기준 FASTA입니다.
-- **Query**: ONT 분석 후 얻은 consensus FASTA, assembly 결과 또는 확인하려는 완성
-  plasmid 서열입니다. Raw FASTQ는 Query에 넣지 않습니다.
-- Raw ONT read부터 분석하려면 **Batch analysis**를 사용합니다.
-
-- 방향과 reverse complement를 자동 판별합니다.
-- `Circular plasmid/vector`를 켜면 FASTA 시작/끝 이음매를 통과하는 정렬을 허용합니다.
-- SNP(1-bp point mutation), insertion, deletion의 위치와 주변 reference context를 표시합니다.
-- 결과 표는 CSV로 받을 수 있습니다.
-
-이 모드는 **두 완성 서열 사이의 차이**만 보여주므로 read depth, QUAL, allele
-fraction은 제공하지 않습니다. 해당 신뢰도 지표가 필요하면 Raw ONT analysis를
-사용합니다.
-
-## 5. 모드 선택 기준
-
-- **Batch analysis**: raw ONT FASTQ를 분석할 때 사용합니다. Reference 하나와 해당
-  sample folder 하나만 올리면 single-sample 분석도 같은 화면에서 실행할 수 있습니다.
-- **Quick sequence comparison**: 이미 완성된 query/consensus FASTA가 있고
-  reference와 sequence 차이만 빠르게 확인할 때 사용합니다. Read depth, QUAL,
-  allele fraction은 계산하지 않습니다.
-- 기존 **Single-sample ONT analysis** 코드는 보존하지만 일반 메뉴에서는 숨깁니다.
-  Batch analysis와 기능이 겹쳐 부서원용 화면을 불필요하게 복잡하게 만들기 때문입니다.
-
-## 6. 결과 위치
+## 4. 결과 위치
 
 각 실행은 서로 섞이지 않게 다음 경로에 저장됩니다.
 
@@ -137,7 +131,7 @@ ui_runs/<실행시각>_<experiment>_<job-id>/
 UI에서 CSV, VCF.GZ, consensus FASTA, sample report를 내려받을 수 있습니다.
 BAM/BAM.BAI와 depth 파일은 크기가 클 수 있어 결과 폴더에만 보관합니다.
 
-## 7. 정확도 해석
+## 5. 정확도 해석
 
 - SNP는 이 UI에서 1-bp substitution/point mutation을 의미합니다.
 - `PASS`는 현재 선택한 QUAL, DP, allele-fraction, edge 기준을 만족합니다.
@@ -146,9 +140,16 @@ BAM/BAM.BAI와 depth 파일은 크기가 클 수 있어 결과 폴더에만 보�
   열어 read-level support를 함께 확인하는 것이 좋습니다.
 - plasmid/vector 단일 clone의 진짜 변이는 보통 높은 allele fraction을 보입니다.
 
-## 8. 테스트
+## 6. 성능 최적화
+
+- Pipeline command는 브라우저에 실시간으로 반복 출력하지 않고 `pipeline.log`에 저장합니다.
+- 진행 화면은 완료된 sample 수만 갱신합니다.
+- Sample ID 편집표와 reference별 상세 결과는 사용자가 요청할 때만 생성합니다.
+- Analysis log는 사용자가 선택할 때 최근 300줄만 표시합니다.
+
+## 7. 테스트
 
 ```bash
 python -m unittest discover -s tests -v
-bash -n run_pipeline.sh run_ui.sh
+bash -n run_pipeline.sh run_ui.sh launch_ui.sh install_linux_launcher.sh
 ```
