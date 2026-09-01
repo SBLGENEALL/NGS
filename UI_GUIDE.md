@@ -64,9 +64,9 @@ ONT_UI_PORT=8502 ./run_ui.sh
 ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 ```
 
-## 3. Batch plasmid analysis (권장)
+## 3. Batch analysis (권장)
 
-1. 왼쪽 `Analysis menu`에서 **Batch plasmid analysis**를 선택합니다.
+1. 왼쪽 `분석 메뉴`에서 **Batch analysis**를 선택합니다.
 2. `Number of samples`에서 이번 run의 전체 barcode sample 수(1–96개)를 지정합니다.
 3. 필요한 reference FASTA를 개수 제한 없이 첫 번째 업로드 영역에 드래그합니다.
 4. `barcode13`, `barcode14` 같은 폴더들이 들어 있는 ONT run 상위 폴더를 두 번째
@@ -85,7 +85,7 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 ### 내장 예제 데이터
 
-Batch 화면의 `Try the included 5-reference / 15-sample demo`를 열어 ZIP을 받습니다.
+Batch 화면의 `예제 데이터로 테스트하기`를 열어 ZIP을 받습니다.
 압축을 푼 뒤 sample 수를 15로 설정하고, `references`의 FASTA 5개와
 `demo_reads` 폴더를 각각 업로드합니다. 예제는 reference마다 exact/SNP/insertion
 sample을 하나씩 포함하며 `expected_mapping.csv`에서 예상 연결과 변이를 확인할 수 있습니다.
@@ -95,7 +95,7 @@ sample을 하나씩 포함하며 `expected_mapping.csv`에서 예상 연결과 �
 
 ## 4. Quick FASTA comparison
 
-왼쪽 `Analysis menu`에서 **Quick sequence comparison**을 선택한 뒤 reference와
+왼쪽 `분석 메뉴`에서 **Quick sequence comparison**을 선택한 뒤 reference와
 query/consensus를 각각 FASTA 업로드 또는 서열 붙여넣기로 입력합니다.
 
 - 방향과 reverse complement를 자동 판별합니다.
@@ -107,27 +107,15 @@ query/consensus를 각각 FASTA 업로드 또는 서열 붙여넣기로 입력�
 fraction은 제공하지 않습니다. 해당 신뢰도 지표가 필요하면 Raw ONT analysis를
 사용합니다.
 
-## 5. Single-sample ONT analysis
+## 5. 모드 선택 기준
 
-1. 왼쪽 `Analysis menu`에서 **Single-sample ONT analysis**를 선택합니다.
-2. 왼쪽 `Analysis settings` 버튼을 누르고 중앙 화면에서 read filter, caller 및
-   variant 기준을 설정한 뒤 저장합니다.
-3. Experiment 이름과 sample/vector 이름을 입력합니다.
-4. Reference FASTA를 올리거나 전체 서열을 붙여넣습니다.
-5. 대용량 데이터는 `Server folder or file path`를 선택하고
-   `/data/.../barcode01` 같은 경로를 입력합니다.
-6. 작은 파일만 브라우저 업로드를 사용합니다.
-7. `Run ONT analysis`를 누릅니다.
-
-기본 QC는 다음과 같습니다.
-
-- minimum read length: **500 bp**
-- minimum mean read quality: **Q10**
-- coverage가 부족할 때 완화 후보: **300 bp / Q8**
-
-기본 variant review 기준은 `QUAL ≥20`, `DP ≥10`, alternate allele fraction
-`≥0.80`입니다. 기준 미달 call을 삭제하지 않고 `REVIEW`로 표시합니다.
-원형 reference 양 끝 50 bp와 homopolymer 인접 call도 경고로 표시됩니다.
+- **Batch analysis**: raw ONT FASTQ를 분석할 때 사용합니다. Sample 수를 1개로
+  설정하면 single-sample 분석도 같은 화면에서 실행할 수 있습니다.
+- **Quick sequence comparison**: 이미 완성된 query/consensus FASTA가 있고
+  reference와 sequence 차이만 빠르게 확인할 때 사용합니다. Read depth, QUAL,
+  allele fraction은 계산하지 않습니다.
+- 기존 **Single-sample ONT analysis** 코드는 보존하지만 일반 메뉴에서는 숨깁니다.
+  Batch analysis와 기능이 겹쳐 부서원용 화면을 불필요하게 복잡하게 만들기 때문입니다.
 
 ## 6. 결과 위치
 
