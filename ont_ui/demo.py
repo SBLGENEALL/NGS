@@ -79,7 +79,7 @@ def build_demo_batch_zip() -> bytes:
                 barcode = f"barcode{barcode_number:02d}"
                 sequence, expected = _sample_sequence(reference, sample_index)
                 archive.writestr(
-                    f"demo_reads/{reference_name}/{barcode}/reads.fastq",
+                    f"demo_reads/{reference_name}/{barcode}.fastq",
                     _fastq(barcode, sequence),
                 )
                 mapping_writer.writerow(
@@ -94,7 +94,7 @@ def build_demo_batch_zip() -> bytes:
             "===================================\n\n"
             "1. Upload all five FASTA files in references/.\n"
             "2. Five reference-specific upload areas will appear.\n"
-            "3. For each reference, select the folder with the same name under demo_reads/.\n"
+            "3. For each reference, upload its three barcode FASTQ files under demo_reads/.\n"
             "4. Review the final assignment against expected_mapping.csv.\n"
             "5. Run the batch analysis.\n\n"
             "Each reference has three example samples: exact, SNP, and 1-bp insertion.\n"
