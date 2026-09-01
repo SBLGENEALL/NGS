@@ -6,6 +6,7 @@
 공개 저장소에는 특정 회사의 이름이나 로고가 포함되지 않습니다. 사내 CI/브랜드
 담당자가 승인한 설정은 프로젝트 루트의 `branding.local.json`과
 `branding_logo.svg`(또는 PNG)에 넣을 수 있으며, 이 파일들은 Git에서 자동 제외됩니다.
+왼쪽 하단 로고는 `branding_sidebar_logo.svg` 또는 `branding_sidebar_logo.png`로 넣습니다.
 `branding.example.json`을 복사해 조직명, 문구 및 색상을 설정할 수 있습니다.
 
 ## 1. 설치
