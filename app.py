@@ -369,7 +369,7 @@ def _render_raw_result(state: dict[str, object]) -> None:
         st.code(run.log_path.read_text(encoding="utf-8", errors="replace"), language="text")
 
 
-def _quick_compare_tab() -> None:
+def _quick_compare_tab(settings: dict[str, object]) -> None:
     st.subheader("Quick reference–sequence comparison")
     st.write(
         "Paste or upload one reference and one query/consensus sequence. The app automatically "
@@ -379,33 +379,41 @@ def _quick_compare_tab() -> None:
     with left:
         st.markdown("#### Reference")
         quick_ref_file = st.file_uploader(
-            "Reference FASTA or text", type=["fasta", "fa", "fna", "txt"], key="quick_ref_file"
+            "Reference FASTA or text",
+            type=["fasta", "fa", "fna", "txt"],
+            key="quick_ref_file",
+            help="Upload one reference plasmid sequence in FASTA or plain-text format.",
         )
         quick_ref_text = st.text_area(
             "Or paste reference DNA",
             height=220,
             placeholder=">reference\nACGT...",
             key="quick_ref_text",
+            help="Use this field instead of uploading a reference file.",
         )
     with right:
         st.markdown("#### Query / consensus")
         quick_query_file = st.file_uploader(
-            "Query FASTA or text", type=["fasta", "fa", "fna", "txt"], key="quick_query_file"
+            "Query FASTA or text",
+            type=["fasta", "fa", "fna", "txt"],
+            key="quick_query_file",
+            help="Upload the assembled or consensus sequence to compare with the reference.",
         )
         quick_query_text = st.text_area(
             "Or paste query DNA",
             height=220,
             placeholder=">query\nACGT...",
             key="quick_query_text",
+            help="Use this field instead of uploading a query file.",
         )
 
-    circular = st.checkbox(
-        "Circular plasmid/vector",
-        value=True,
-        help="The reference is temporarily doubled for alignment, then coordinates are normalized back.",
-        key="quick_circular",
-    )
-    if st.button("Compare sequences", type="primary", key="quick_run"):
+    circular = bool(settings["circular"])
+    if st.button(
+        "Compare sequences",
+        type="primary",
+        key="quick_run",
+        help="Align the query against the reference and report SNPs, insertions, and deletions.",
+    ):
         try:
             reference = _sequence_from_inputs(quick_ref_file, quick_ref_text, "reference")
             query = _sequence_from_inputs(quick_query_file, quick_query_text, "query")
@@ -544,8 +552,10 @@ def _render_batch_results(result: dict[str, object], job) -> None:
                         st.dataframe(pd.DataFrame(details), hide_index=True, use_container_width=True)
 
 
-def _batch_ont_tab() -> None:
-    st.subheader("32-plasmid / 96-barcode batch analysis")
+def _batch_ont_tab(settings: dict[str, object]) -> None:
+    reference_count = int(settings["reference_count"])
+    expected_sample_count = reference_count * 3
+    st.subheader(f"{reference_count}-plasmid / {expected_sample_count}-barcode batch analysis")
     st.write(
         "Upload reference sequences and the completed ONT barcode directory. Barcodes are sorted "
         "numerically and assigned three at a time; review or edit the mapping before running."
@@ -559,11 +569,14 @@ def _batch_ont_tab() -> None:
     with upload_columns[0]:
         st.markdown("#### 1 · Reference sequences")
         reference_uploads = st.file_uploader(
-            "Drag up to 32 reference files",
+            f"Drag {reference_count} reference file(s)",
             type=["fasta", "fa", "fna", "txt"],
             accept_multiple_files=True,
             key="batch_references",
-            help="The file name becomes the plasmid/reference name in the final report.",
+            help=(
+                f"Upload exactly {reference_count} reference file(s). The file name becomes the "
+                "plasmid/reference name in the final report."
+            ),
         )
     with upload_columns[1]:
         st.markdown("#### 2 · ONT barcode directory")
@@ -595,10 +608,16 @@ def _batch_ont_tab() -> None:
             validation_errors.append(str(exc))
 
     upload_metrics = st.columns(4)
-    upload_metrics[0].metric("References", len(reference_uploads))
-    upload_metrics[1].metric("Detected barcodes", len(barcode_names))
-    upload_metrics[2].metric("Expected samples", len(reference_uploads) * 3)
+    upload_metrics[0].metric("References", f"{len(reference_uploads)} / {reference_count}")
+    upload_metrics[1].metric("Detected barcodes", f"{len(barcode_names)} / {expected_sample_count}")
+    upload_metrics[2].metric("Planned samples", expected_sample_count)
     upload_metrics[3].metric("Uploaded FASTQ files", len(read_uploads))
+
+    if reference_uploads and len(reference_uploads) != reference_count:
+        st.warning(
+            f"The sidebar is set to {reference_count} reference(s), but "
+            f"{len(reference_uploads)} file(s) were uploaded."
+        )
 
     if reference_rows:
         with st.expander("Reference file check"):
@@ -631,11 +650,24 @@ def _batch_ont_tab() -> None:
             num_rows="fixed",
             key="batch_mapping_editor",
             column_config={
-                "Order": st.column_config.NumberColumn(min_value=1, step=1, required=True),
-                "Reference": st.column_config.TextColumn(disabled=True),
-                "Barcode 1": st.column_config.SelectboxColumn(options=barcode_names, required=True),
-                "Barcode 2": st.column_config.SelectboxColumn(options=barcode_names, required=True),
-                "Barcode 3": st.column_config.SelectboxColumn(options=barcode_names, required=True),
+                "Order": st.column_config.NumberColumn(
+                    min_value=1,
+                    step=1,
+                    required=True,
+                    help="Analysis and report order for the reference.",
+                ),
+                "Reference": st.column_config.TextColumn(
+                    disabled=True, help="Reference file name used in the result report."
+                ),
+                "Barcode 1": st.column_config.SelectboxColumn(
+                    options=barcode_names, required=True, help="First ONT replicate for this plasmid."
+                ),
+                "Barcode 2": st.column_config.SelectboxColumn(
+                    options=barcode_names, required=True, help="Second ONT replicate for this plasmid."
+                ),
+                "Barcode 3": st.column_config.SelectboxColumn(
+                    options=barcode_names, required=True, help="Third ONT replicate for this plasmid."
+                ),
             },
         )
         st.session_state["batch_mapping"] = edited
@@ -652,7 +684,7 @@ def _batch_ont_tab() -> None:
         )
         duplicates = sorted({value for value in assigned if assigned.count(value) > 1}, key=natural_key)
         missing = sorted(set(barcode_names) - set(assigned), key=natural_key)
-        expected_assignment_count = len(reference_uploads) * 3
+        expected_assignment_count = expected_sample_count
         if invalid_assignments or len(assigned) != expected_assignment_count:
             st.error(
                 f"Every reference needs three valid barcodes ({expected_assignment_count} total assignments)."
@@ -661,24 +693,17 @@ def _batch_ont_tab() -> None:
             st.error("Duplicate assignments: " + ", ".join(duplicates))
         if missing:
             st.warning("Uploaded but not assigned: " + ", ".join(missing))
-        if len(barcode_names) != len(reference_uploads) * 3:
+        if len(barcode_names) != expected_sample_count:
             st.warning(
-                f"The usual 3-per-reference layout expects {len(reference_uploads) * 3} barcodes, "
+                f"The selected 3-per-reference layout expects {expected_sample_count} barcodes, "
                 f"but {len(barcode_names)} were detected. You can still edit and run the mapping."
             )
-
-        st.markdown("#### 4 · Analysis settings")
-        settings_columns = st.columns(5)
-        experiment_name = settings_columns[0].text_input("Experiment", value="ONT_plasmid_batch")
-        threads = settings_columns[1].number_input("Threads/sample", 1, 64, 8)
-        parallel_jobs = settings_columns[2].number_input("Parallel samples", 1, 64, 16)
-        min_length = settings_columns[3].number_input("Minimum read length", 0, value=500, step=50)
-        min_quality = settings_columns[4].number_input("Minimum mean Q", 0, value=10, step=1)
 
         can_run = (
             not validation_errors
             and not duplicates
             and not invalid_assignments
+            and len(reference_uploads) == reference_count
             and len(assigned) == expected_assignment_count
         )
         if st.button(
@@ -687,6 +712,7 @@ def _batch_ont_tab() -> None:
             disabled=not can_run,
             key="batch_run",
             use_container_width=True,
+            help="Run all mapped barcode samples with the Analysis settings selected in the sidebar.",
         ):
             try:
                 mappings = []
@@ -710,12 +736,12 @@ def _batch_ont_tab() -> None:
                     raise BatchPreparationError(
                         "Missing analysis tool(s): " + ", ".join(missing_tools)
                     )
-                settings = BatchSettings(
-                    experiment_name=experiment_name,
-                    threads=int(threads),
-                    parallel_jobs=int(parallel_jobs),
-                    min_read_length=int(min_length),
-                    min_read_quality=int(min_quality),
+                batch_settings = BatchSettings(
+                    experiment_name=str(settings["experiment_name"]),
+                    threads=int(settings["threads"]),
+                    parallel_jobs=int(settings["parallel_jobs"]),
+                    min_read_length=int(settings["min_length"]),
+                    min_read_quality=int(settings["min_quality"]),
                 )
                 with st.spinner("Staging uploaded references and FASTQ files on the server…"):
                     job = prepare_batch_job(
@@ -723,7 +749,7 @@ def _batch_ont_tab() -> None:
                         reference_uploads,
                         read_uploads,
                         mappings,
-                        settings,
+                        batch_settings,
                     )
                 log_box = st.empty()
                 progress_box = st.empty()
@@ -759,7 +785,7 @@ def _batch_ont_tab() -> None:
         _render_batch_results(batch_state["result"], batch_state["job"])
 
 
-def _raw_ont_tab() -> None:
+def _raw_ont_tab(settings: dict[str, object]) -> None:
     st.subheader("Raw Oxford Nanopore read analysis")
     st.write(
         "Run the existing NanoFilt → minimap2 → samtools → bcftools pipeline from the browser. "
@@ -768,24 +794,37 @@ def _raw_ont_tab() -> None:
 
     identity_cols = st.columns(2)
     with identity_cols[0]:
-        experiment_name = st.text_input("Experiment name", value="ONT_experiment")
+        experiment_name = st.text_input(
+            "Experiment name",
+            value="ONT_experiment",
+            help="Name of the output experiment folder created under ui_runs.",
+        )
     with identity_cols[1]:
-        sample_name = st.text_input("Sample / vector name", value="sample01")
+        sample_name = st.text_input(
+            "Sample / vector name",
+            value="sample01",
+            help="Short identifier used as the output file prefix.",
+        )
 
     reference_file = st.file_uploader(
-        "Reference FASTA or text", type=["fasta", "fa", "fna", "txt"], key="raw_ref_file"
+        "Reference FASTA or text",
+        type=["fasta", "fa", "fna", "txt"],
+        key="raw_ref_file",
+        help="Upload one reference plasmid sequence in FASTA or plain-text format.",
     )
     reference_text = st.text_area(
         "Or paste reference DNA",
         height=150,
         placeholder=">sample01\nACGT...",
         key="raw_ref_text",
+        help="Use this field instead of uploading a reference file.",
     )
 
     reads_mode = st.radio(
         "FASTQ input",
         ["Server folder or file path (recommended)", "Upload FASTQ files"],
         horizontal=True,
+        help="Server paths avoid transferring large read files through the browser.",
     )
     reads_path = ""
     uploaded_reads = []
@@ -801,44 +840,28 @@ def _raw_ont_tab() -> None:
             type=["fastq", "fq", "gz"],
             accept_multiple_files=True,
             key="raw_reads_upload",
+            help="Upload one or more FASTQ/FASTQ.GZ files for this sample.",
         )
         st.caption("Browser upload is intended for smaller datasets; large ONT runs should use a server path.")
 
-    with st.expander("Analysis settings", expanded=True):
-        settings_cols = st.columns(4)
-        threads = settings_cols[0].number_input(
-            "CPU threads", min_value=1, max_value=max(1, os.cpu_count() or 1), value=min(8, os.cpu_count() or 1)
-        )
-        min_length = settings_cols[1].number_input(
-            "Minimum read length", min_value=0, value=500, step=50, help="Use 300 if coverage is low."
-        )
-        min_read_quality = settings_cols[2].number_input(
-            "Minimum mean Q", min_value=0, value=10, step=1, help="Use Q8 if coverage is low."
-        )
-        caller_label = settings_cols[3].selectbox(
-            "Variant caller", ["bcftools (recommended)", "medaka", "pilon"]
-        )
-        caller = caller_label.split()[0]
-        pilon_jar = ""
-        pilon_mem = "16G"
-        if caller == "pilon":
-            pilon_cols = st.columns(2)
-            pilon_jar = pilon_cols[0].text_input("Pilon JAR path")
-            pilon_mem = pilon_cols[1].text_input("Pilon Java memory", value="16G")
+    threads = int(settings["threads"])
+    min_length = int(settings["min_length"])
+    min_read_quality = int(settings["min_read_quality"])
+    caller = str(settings["caller"])
+    pilon_jar = str(settings.get("pilon_jar", ""))
+    pilon_mem = str(settings.get("pilon_mem", "16G"))
+    min_variant_quality = float(settings["min_variant_quality"])
+    min_variant_depth = int(settings["min_variant_depth"])
+    min_af = float(settings["min_af"])
+    circular = bool(settings["circular"])
+    edge_margin = int(settings["edge_margin"])
 
-        st.markdown("**Variant review thresholds**")
-        threshold_cols = st.columns(5)
-        min_variant_quality = threshold_cols[0].number_input("Minimum QUAL", min_value=0.0, value=20.0)
-        min_variant_depth = threshold_cols[1].number_input("Minimum DP", min_value=0, value=10)
-        min_af = threshold_cols[2].number_input(
-            "Minimum allele fraction", min_value=0.0, max_value=1.0, value=0.80, step=0.05
-        )
-        circular = threshold_cols[3].checkbox("Circular reference", value=True)
-        edge_margin = threshold_cols[4].number_input(
-            "Edge margin (bp)", min_value=0, value=50, disabled=not circular
-        )
-
-    if st.button("Run ONT analysis", type="primary", key="raw_run"):
+    if st.button(
+        "Run ONT analysis",
+        type="primary",
+        key="raw_run",
+        help="Run the pipeline using the Analysis settings selected in the sidebar.",
+    ):
         try:
             reference = _sequence_from_inputs(reference_file, reference_text, sample_name or "sample")
             analysis_settings = RawAnalysisSettings(
@@ -911,7 +934,7 @@ def _raw_ont_tab() -> None:
         _render_raw_result(raw_state)
 
 
-def _sidebar() -> None:
+def _sidebar() -> tuple[str, dict[str, object]]:
     branding = _load_branding()
     logo = _sidebar_brand_logo()
     with st.sidebar:
@@ -919,11 +942,10 @@ def _sidebar() -> None:
             """
             <style>
             .sidebar-brand-footer {
-                position:fixed; left:18px; bottom:14px; width:244px;
-                box-sizing:border-box; padding:12px 14px 10px;
+                width:100%; box-sizing:border-box; padding:12px 14px 10px;
+                margin-top:24px;
                 background:rgba(255,255,255,.96); border:1px solid #E3E8F3;
                 border-radius:12px; box-shadow:0 6px 20px rgba(23,33,58,.08);
-                z-index:999;
             }
             .sidebar-brand-logo {
                 display:block; width:100%; max-width:210px; max-height:58px;
@@ -933,24 +955,188 @@ def _sidebar() -> None:
                 color:#667085; font:500 11px/1.35 "Segoe UI",Arial,sans-serif;
                 text-align:center;
             }
-            @media (max-height:760px) {
-                .sidebar-brand-footer { position:static; width:100%; margin-top:16px; }
-            }
             </style>
             """,
             unsafe_allow_html=True,
         )
         st.markdown("### ONT Plasmid Analyzer")
-        st.caption("Internal batch analysis · Local server only")
-        st.info("Sequence and read data remain inside this Linux server.")
-        st.markdown("**Analysis environment**")
-        for executable in ("minimap2", "samtools", "bcftools", "NanoFilt"):
-            if shutil.which(executable):
-                st.success(f"{executable}: ready")
-            else:
-                st.warning(f"{executable}: not found")
+        st.caption("Local ONT plasmid variant analysis")
+
+        mode = st.radio(
+            "Analysis menu",
+            ["Batch plasmid analysis", "Quick sequence comparison", "Single-sample ONT analysis"],
+            key="analysis_mode",
+            help=(
+                "Batch maps three barcode replicates to each plasmid. Quick comparison aligns two "
+                "assembled sequences. Single-sample runs the complete ONT read pipeline."
+            ),
+        )
+
+        settings: dict[str, object] = {}
+        if mode == "Batch plasmid analysis":
+            st.markdown("#### Run setup")
+            reference_count = st.number_input(
+                "Number of references",
+                min_value=1,
+                max_value=32,
+                value=1,
+                step=1,
+                key="batch_reference_count",
+                help=(
+                    "Select how many different plasmids will be analyzed in this run. "
+                    "Each reference is matched to three barcode samples."
+                ),
+            )
+            st.caption(f"{int(reference_count)} references × 3 replicates = {int(reference_count) * 3} samples")
+            st.markdown("#### Analysis settings")
+            with st.expander("Batch pipeline", expanded=True):
+                settings["experiment_name"] = st.text_input(
+                    "Experiment name",
+                    value="ONT_plasmid_batch",
+                    key="batch_experiment_name",
+                    help="Name of the output folder created under ui_runs.",
+                )
+                settings["threads"] = st.number_input(
+                    "Threads per sample",
+                    min_value=1,
+                    max_value=64,
+                    value=8,
+                    key="batch_threads",
+                    help="CPU threads assigned to each barcode sample. Eight is a safe default.",
+                )
+                settings["parallel_jobs"] = st.number_input(
+                    "Parallel samples",
+                    min_value=1,
+                    max_value=96,
+                    value=16,
+                    key="batch_parallel_jobs",
+                    help=(
+                        "Maximum number of barcode samples processed at the same time. Reduce this "
+                        "on a laptop or a low-memory system."
+                    ),
+                )
+                settings["min_length"] = st.number_input(
+                    "Minimum read length",
+                    min_value=0,
+                    value=500,
+                    step=50,
+                    key="batch_min_length",
+                    help="Reads shorter than this length are removed before mapping. Use 300 if coverage is low.",
+                )
+                settings["min_quality"] = st.number_input(
+                    "Minimum mean Q",
+                    min_value=0,
+                    value=10,
+                    step=1,
+                    key="batch_min_quality",
+                    help="Reads below this mean Phred quality score are removed. Use Q8 if coverage is low.",
+                )
+            settings["reference_count"] = int(reference_count)
+        elif mode == "Quick sequence comparison":
+            st.markdown("#### Analysis settings")
+            with st.expander("Sequence alignment", expanded=True):
+                settings["circular"] = st.checkbox(
+                    "Circular plasmid/vector",
+                    value=True,
+                    key="quick_circular",
+                    help=(
+                        "Temporarily doubles the reference during alignment so variants spanning the "
+                        "plasmid origin can be detected, then restores the original coordinates."
+                    ),
+                )
+        else:
+            st.markdown("#### Analysis settings")
+            with st.expander("Read filtering and caller", expanded=True):
+                settings["threads"] = st.number_input(
+                    "CPU threads",
+                    min_value=1,
+                    max_value=max(1, os.cpu_count() or 1),
+                    value=min(8, os.cpu_count() or 1),
+                    key="raw_threads",
+                    help="CPU threads used for this single sample.",
+                )
+                settings["min_length"] = st.number_input(
+                    "Minimum read length",
+                    min_value=0,
+                    value=500,
+                    step=50,
+                    key="raw_min_length",
+                    help="Reads shorter than this value are removed. Use 300 if coverage is low.",
+                )
+                settings["min_read_quality"] = st.number_input(
+                    "Minimum mean Q",
+                    min_value=0,
+                    value=10,
+                    step=1,
+                    key="raw_min_quality",
+                    help="Reads below this mean Phred score are removed. Use Q8 if coverage is low.",
+                )
+                caller_label = st.selectbox(
+                    "Variant caller",
+                    ["bcftools (recommended)", "medaka", "pilon"],
+                    key="raw_caller",
+                    help="bcftools is the default lightweight caller. Medaka and Pilon require separate installations.",
+                )
+                settings["caller"] = caller_label.split()[0]
+                if settings["caller"] == "pilon":
+                    settings["pilon_jar"] = st.text_input(
+                        "Pilon JAR path",
+                        key="raw_pilon_jar",
+                        help="Full Linux path to the installed pilon.jar file.",
+                    )
+                    settings["pilon_mem"] = st.text_input(
+                        "Pilon Java memory",
+                        value="16G",
+                        key="raw_pilon_mem",
+                        help="Maximum Java heap memory allocated to Pilon.",
+                    )
+            with st.expander("Variant review thresholds", expanded=False):
+                settings["min_variant_quality"] = st.number_input(
+                    "Minimum QUAL",
+                    min_value=0.0,
+                    value=20.0,
+                    key="raw_variant_quality",
+                    help="Calls below this variant quality score are marked REVIEW.",
+                )
+                settings["min_variant_depth"] = st.number_input(
+                    "Minimum DP",
+                    min_value=0,
+                    value=10,
+                    key="raw_variant_depth",
+                    help="Calls supported by fewer reads than this depth are marked REVIEW.",
+                )
+                settings["min_af"] = st.number_input(
+                    "Minimum allele fraction",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.80,
+                    step=0.05,
+                    key="raw_variant_af",
+                    help="Minimum fraction of reads supporting the alternative allele for PASS status.",
+                )
+                settings["circular"] = st.checkbox(
+                    "Circular reference",
+                    value=True,
+                    key="raw_circular",
+                    help="Enable for plasmids so origin-spanning alignments are handled as circular.",
+                )
+                settings["edge_margin"] = st.number_input(
+                    "Edge margin (bp)",
+                    min_value=0,
+                    value=50,
+                    disabled=not bool(settings["circular"]),
+                    key="raw_edge_margin",
+                    help="Calls this close to a linear reference edge are marked for review.",
+                )
+
         st.divider()
-        st.caption(f"UI result root\n`{UI_RUN_ROOT}`")
+        with st.expander("System status", expanded=False):
+            tool_states = [
+                f"{'✓' if shutil.which(executable) else '✕'} {executable}"
+                for executable in ("minimap2", "samtools", "bcftools", "NanoFilt")
+            ]
+            st.caption(" · ".join(tool_states))
+            st.caption(f"Results: `{UI_RUN_ROOT}`")
         st.markdown(
             (
                 '<div class="sidebar-brand-footer">'
@@ -959,6 +1145,7 @@ def _sidebar() -> None:
             ),
             unsafe_allow_html=True,
         )
+    return mode, settings
 
 
 def main() -> None:
@@ -967,17 +1154,14 @@ def main() -> None:
         page_icon="🧬",
         layout="wide",
     )
+    mode, settings = _sidebar()
     _brand_header()
-    _sidebar()
-    batch_tab, quick_tab, raw_tab = st.tabs(
-        ["Batch plasmid analysis", "Quick sequence comparison", "Single-sample ONT analysis"]
-    )
-    with batch_tab:
-        _batch_ont_tab()
-    with quick_tab:
-        _quick_compare_tab()
-    with raw_tab:
-        _raw_ont_tab()
+    if mode == "Batch plasmid analysis":
+        _batch_ont_tab(settings)
+    elif mode == "Quick sequence comparison":
+        _quick_compare_tab(settings)
+    else:
+        _raw_ont_tab(settings)
 
 
 if __name__ == "__main__":
