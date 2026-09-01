@@ -66,12 +66,17 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 ## 3. Batch plasmid analysis (권장)
 
-1. 최대 32개의 reference FASTA를 첫 번째 업로드 영역에 드래그합니다.
-2. `barcode13`, `barcode14` 같은 폴더들이 들어 있는 ONT run 상위 폴더를 두 번째
+1. 왼쪽 `Analysis menu`에서 **Batch plasmid analysis**를 선택합니다.
+2. `Number of references`에서 이번에 분석할 plasmid 수(1–32개)를 지정합니다.
+3. 지정한 수만큼 reference FASTA를 첫 번째 업로드 영역에 드래그합니다.
+4. `barcode13`, `barcode14` 같은 폴더들이 들어 있는 ONT run 상위 폴더를 두 번째
    업로드 영역에서 선택합니다.
-3. UI는 barcode 번호를 숫자순으로 정렬하고 reference당 3개씩 자동 배정합니다.
-4. 매핑 표의 `Order` 또는 `Barcode 1–3`을 수정해 실제 실험 순서와 맞춥니다.
-5. 중복·누락 경고가 없는지 확인한 뒤 `Run batch analysis`를 누릅니다.
+5. UI는 barcode 번호를 숫자순으로 정렬하고 reference당 3개씩 자동 배정합니다.
+6. 매핑 표의 `Order` 또는 `Barcode 1–3`을 수정해 실제 실험 순서와 맞춥니다.
+7. 왼쪽 `Analysis settings`에서 CPU, 병렬 sample 수, read filter를 확인합니다.
+8. 중복·누락 경고가 없는지 확인한 뒤 `Run batch analysis`를 누릅니다.
+
+각 입력 항목의 `?`에 커서를 올리면 설정 의미와 권장 사용법을 확인할 수 있습니다.
 
 결과는 reference별로 세 replicate가 한 묶음으로 표시되며 `CLEAN`,
 `VARIANT DETECTED`, `REVIEW`, `ERROR` 상태를 제공합니다. 전체 결과 요약은 CSV로
@@ -82,7 +87,8 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 ## 4. Quick FASTA comparison
 
-Reference와 query/consensus를 각각 FASTA 업로드 또는 서열 붙여넣기로 입력합니다.
+왼쪽 `Analysis menu`에서 **Quick sequence comparison**을 선택한 뒤 reference와
+query/consensus를 각각 FASTA 업로드 또는 서열 붙여넣기로 입력합니다.
 
 - 방향과 reverse complement를 자동 판별합니다.
 - `Circular plasmid/vector`를 켜면 FASTA 시작/끝 이음매를 통과하는 정렬을 허용합니다.
@@ -95,12 +101,14 @@ fraction은 제공하지 않습니다. 해당 신뢰도 지표가 필요하면 R
 
 ## 5. Single-sample ONT analysis
 
-1. Experiment 이름과 sample/vector 이름을 입력합니다.
-2. Reference FASTA를 올리거나 전체 서열을 붙여넣습니다.
-3. 대용량 데이터는 `Server folder or file path`를 선택하고
+1. 왼쪽 `Analysis menu`에서 **Single-sample ONT analysis**를 선택합니다.
+2. 왼쪽 `Analysis settings`에서 read filter, caller 및 variant 기준을 설정합니다.
+3. Experiment 이름과 sample/vector 이름을 입력합니다.
+4. Reference FASTA를 올리거나 전체 서열을 붙여넣습니다.
+5. 대용량 데이터는 `Server folder or file path`를 선택하고
    `/data/.../barcode01` 같은 경로를 입력합니다.
-4. 작은 파일만 브라우저 업로드를 사용합니다.
-5. 분석 설정을 확인하고 `Run ONT analysis`를 누릅니다.
+6. 작은 파일만 브라우저 업로드를 사용합니다.
+7. `Run ONT analysis`를 누릅니다.
 
 기본 QC는 다음과 같습니다.
 
