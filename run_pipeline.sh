@@ -175,7 +175,9 @@ process_one() {
         REF_NAMES+=("${rf%.*}")
     done
 
-    local READ_FIND_EXPR=( -type f \( -iname "*.fastq.gz" -o -iname "*.fastq" -o -iname "*.fq.gz" -o -iname "*.fq" -o -iname "*.gz" \) )
+    # Batch UI stages uploaded reads as symbolic links. Accept both regular
+    # files and links so those reads are not skipped before mapping.
+    local READ_FIND_EXPR=( \( -type f -o -type l \) \( -iname "*.fastq.gz" -o -iname "*.fastq" -o -iname "*.fq.gz" -o -iname "*.fq" -o -iname "*.gz" \) )
 
     strip_read_ext() {
         local n="$1"
