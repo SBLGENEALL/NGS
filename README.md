@@ -3,10 +3,11 @@
 Oxford Nanopore MinION으로 시퀀싱한 결과(fastq)를 reference FASTA(벡터맵)에
 매핑하고, BAM/consensus FASTA/VCF/리포트를 생성하는 파이프라인입니다.
 
-## 로컬 웹 UI: ONT Variant Explorer
+## 로컬 웹 UI: ONT Plasmid Analyzer
 
 명령어 없이 브라우저에서 분석할 수 있는 오프라인 Streamlit UI가 포함되어
-있습니다. 데이터와 분석은 Linux 서버 내부에서만 처리됩니다.
+있습니다. 데이터와 분석은 Linux 서버 내부에서만 처리되며 Windows 사용자는
+Chrome/Edge로 서버 주소에 접속합니다.
 
 ```bash
 conda env update -n NGS_env -f environment.yml
@@ -14,13 +15,18 @@ conda activate NGS_env
 ./run_ui.sh
 ```
 
-브라우저에서 `http://<Linux-server-IP>:8501`을 열면 다음 두 모드를 사용할 수
+브라우저에서 `http://<Linux-server-IP>:8501`을 열면 다음 세 모드를 사용할 수
 있습니다.
 
-1. **Quick FASTA comparison**: reference와 query/consensus 서열을 붙여넣거나
+1. **Batch plasmid analysis**: 최대 32개 reference와 barcode 폴더가 포함된
+   ONT run 디렉터리를 업로드합니다. barcode를 숫자순으로 정렬해 reference당
+   3개씩 자동 배정하고, 편집 가능한 매핑 표를 확인한 뒤 최대 96개 샘플을
+   병렬 분석합니다. 결과는 reference별 세 replicate 묶음과 전체 CSV로
+   제공합니다.
+2. **Quick FASTA comparison**: reference와 query/consensus 서열을 붙여넣거나
    업로드하여 SNP(point mutation), insertion, deletion을 즉시 비교합니다.
    reverse complement와 circular plasmid 이음매를 자동으로 처리합니다.
-2. **Raw ONT analysis**: reference FASTA와 FASTQ/FASTQ.GZ(또는 서버 폴더)를
+3. **Single-sample ONT analysis**: reference FASTA와 FASTQ/FASTQ.GZ(또는 서버 폴더)를
    입력하여 기존 전체 파이프라인을 실행하고 mapping rate, depth, coverage,
    QUAL, DP, allele fraction과 변이 표를 확인합니다.
 
