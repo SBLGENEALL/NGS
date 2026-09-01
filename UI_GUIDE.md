@@ -86,14 +86,6 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 내려받을 수 있고 BAM, VCF, consensus FASTA 및 보고서는 서버 결과 폴더에 남습니다.
 실행 command와 상세 출력은 기본적으로 접힌 `Analysis log`에서 필요할 때만 확인합니다.
 
-### 내장 예제 데이터
-
-Batch 화면의 `예제 데이터로 테스트하기`를 열어 ZIP을 받습니다.
-압축을 푼 뒤 `references`의 FASTA 5개를 올립니다. 각 reference 입력창에
-`demo_reads/<같은 reference 이름>/`의 FASTQ 파일 또는 폴더를 그대로 올립니다.
-예제는 reference마다 exact/SNP/insertion sample을
-하나씩 포함하며 `expected_mapping.csv`에서 예상 연결과 변이를 확인할 수 있습니다.
-
 Sample ID는 `barcode13` 같은 번호, ONT sample alias 폴더명 또는 FASTQ 파일명에서
 자동으로 가져옵니다. 따라서 barcode라는 이름을 반드시 사용할 필요가 없습니다.
 
