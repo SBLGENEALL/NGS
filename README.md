@@ -24,7 +24,6 @@ conda activate NGS_env
    ONT sample 영역이 자동 생성됩니다. 각 영역에 FASTQ 파일 또는 sample 폴더를
    그대로 넣을 수 있습니다. `barcode13`뿐 아니라 MinKNOW에서 지정한 sample alias와
    FASTQ 파일명도 Sample ID로 인식합니다.
-   화면에서 바로 받을 수 있는 5-reference/15-sample synthetic demo도 제공합니다.
 2. **Quick sequence comparison**: reference와 query/consensus 서열을 붙여넣거나
    업로드하여 SNP(point mutation), insertion, deletion을 즉시 비교합니다.
    reverse complement와 circular plasmid 이음매를 자동으로 처리합니다.
