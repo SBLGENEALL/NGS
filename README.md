@@ -16,15 +16,14 @@ conda activate NGS_env
 ```
 
 브라우저에서 `http://<Linux-server-IP>:8501`을 열면 왼쪽 `Analysis menu`에서
-다음 세 모드를 선택할 수 있습니다. 분석 개수와 주요 설정도 왼쪽에서 변경하며,
-각 `?` 도움말에 커서를 올리면 설정 설명을 확인할 수 있습니다.
+다음 세 모드를 선택할 수 있습니다. `Analysis settings` 버튼을 누르면 선택한
+분석의 설정이 중앙 작업공간에 표시되며, 각 `?` 도움말에 커서를 올리면 설명을
+확인할 수 있습니다. 앱은 일관된 light theme와 브랜드 그라데이션 sidebar를 사용합니다.
 
-1. **Batch plasmid analysis**: 이번 run에서 분석할 reference 수를 1–32개 중
-   선택하고, reference와 barcode 폴더가 포함된
-   ONT run 디렉터리를 업로드합니다. barcode를 숫자순으로 정렬해 reference당
-   3개씩 자동 배정하고, 편집 가능한 매핑 표를 확인한 뒤 최대 96개 샘플을
-   병렬 분석합니다. 결과는 reference별 세 replicate 묶음과 전체 CSV로
-   제공합니다.
+1. **Batch plasmid analysis**: 이번 run의 전체 barcode sample 수를 1–96개 중
+   선택하고 필요한 reference와 ONT barcode 폴더를 업로드합니다. 각 barcode를
+   원하는 reference에 독립적으로 연결하므로 reference별 sample 수는 자유롭습니다.
+   화면에서 바로 받을 수 있는 5-reference/15-sample synthetic demo도 제공합니다.
 2. **Quick FASTA comparison**: reference와 query/consensus 서열을 붙여넣거나
    업로드하여 SNP(point mutation), insertion, deletion을 즉시 비교합니다.
    reverse complement와 circular plasmid 이음매를 자동으로 처리합니다.
