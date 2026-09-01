@@ -67,15 +67,14 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 ## 3. Batch analysis (권장)
 
 1. 왼쪽 `분석 메뉴`에서 **Batch analysis**를 선택합니다.
-2. `Number of samples`에서 이번 run의 전체 barcode sample 수(1–96개)를 지정합니다.
-3. 필요한 reference FASTA를 개수 제한 없이 첫 번째 업로드 영역에 드래그합니다.
-4. `barcode13`, `barcode14` 같은 폴더들이 들어 있는 ONT run 상위 폴더를 두 번째
-   업로드 영역에서 선택합니다.
-5. UI는 barcode를 숫자순으로 정렬해 한 줄에 하나씩 표시합니다.
-6. 각 barcode 행의 `Reference`를 선택해 원하는 reference와 자유롭게 연결합니다.
-7. 왼쪽의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 설정 화면에서 CPU,
-   병렬 sample 수 및 read filter를 확인하고 저장합니다.
-8. 중복·누락 경고가 없는지 확인한 뒤 `Run batch analysis`를 누릅니다.
+2. 필요한 reference FASTA를 첫 번째 업로드 영역에 모두 드래그합니다.
+3. `Reference file check`에서 파일명과 길이를 확인합니다.
+4. Reference 파일명별로 생성된 영역에서 해당 reference에 사용할 barcode 폴더들의
+   상위 폴더를 선택합니다.
+5. `분석 전 최종 확인`에서 reference별 barcode와 FASTQ 개수를 확인합니다.
+6. 왼쪽의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 `Batch settings`에서
+   CPU, 병렬 sample 수, read filter 및 variant review 기준을 저장할 수 있습니다.
+7. 중복·누락 경고가 없는지 확인한 뒤 `Batch analysis 실행`을 누릅니다.
 
 각 입력 항목의 `?`에 커서를 올리면 설정 의미와 권장 사용법을 확인할 수 있습니다.
 
@@ -86,9 +85,10 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 ### 내장 예제 데이터
 
 Batch 화면의 `예제 데이터로 테스트하기`를 열어 ZIP을 받습니다.
-압축을 푼 뒤 sample 수를 15로 설정하고, `references`의 FASTA 5개와
-`demo_reads` 폴더를 각각 업로드합니다. 예제는 reference마다 exact/SNP/insertion
-sample을 하나씩 포함하며 `expected_mapping.csv`에서 예상 연결과 변이를 확인할 수 있습니다.
+압축을 푼 뒤 `references`의 FASTA 5개를 올립니다. 생성된 각 reference 영역에서
+`demo_reads/<같은 reference 이름>/` 폴더를 선택합니다. 예제는 reference마다
+exact/SNP/insertion sample을 하나씩 포함하며 `expected_mapping.csv`에서 예상
+연결과 변이를 확인할 수 있습니다.
 
 > 디렉터리 업로드를 위해 Streamlit 1.57 이상이 필요합니다. FASTQ는 브라우저를
 > 통해 서버로 전송되므로 분석 중 브라우저 탭을 닫지 마세요.
@@ -109,8 +109,8 @@ fraction은 제공하지 않습니다. 해당 신뢰도 지표가 필요하면 R
 
 ## 5. 모드 선택 기준
 
-- **Batch analysis**: raw ONT FASTQ를 분석할 때 사용합니다. Sample 수를 1개로
-  설정하면 single-sample 분석도 같은 화면에서 실행할 수 있습니다.
+- **Batch analysis**: raw ONT FASTQ를 분석할 때 사용합니다. Reference 하나와 해당
+  barcode folder 하나만 올리면 single-sample 분석도 같은 화면에서 실행할 수 있습니다.
 - **Quick sequence comparison**: 이미 완성된 query/consensus FASTA가 있고
   reference와 sequence 차이만 빠르게 확인할 때 사용합니다. Read depth, QUAL,
   allele fraction은 계산하지 않습니다.
