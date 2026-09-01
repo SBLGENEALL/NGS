@@ -15,10 +15,12 @@ conda activate NGS_env
 ./run_ui.sh
 ```
 
-브라우저에서 `http://<Linux-server-IP>:8501`을 열면 다음 세 모드를 사용할 수
-있습니다.
+브라우저에서 `http://<Linux-server-IP>:8501`을 열면 왼쪽 `Analysis menu`에서
+다음 세 모드를 선택할 수 있습니다. 분석 개수와 주요 설정도 왼쪽에서 변경하며,
+각 `?` 도움말에 커서를 올리면 설정 설명을 확인할 수 있습니다.
 
-1. **Batch plasmid analysis**: 최대 32개 reference와 barcode 폴더가 포함된
+1. **Batch plasmid analysis**: 이번 run에서 분석할 reference 수를 1–32개 중
+   선택하고, reference와 barcode 폴더가 포함된
    ONT run 디렉터리를 업로드합니다. barcode를 숫자순으로 정렬해 reference당
    3개씩 자동 배정하고, 편집 가능한 매핑 표를 확인한 뒤 최대 96개 샘플을
    병렬 분석합니다. 결과는 reference별 세 replicate 묶음과 전체 CSV로
