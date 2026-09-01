@@ -69,8 +69,8 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 1. 왼쪽 `분석 메뉴`에서 **Batch analysis**를 선택합니다.
 2. 필요한 reference FASTA를 첫 번째 업로드 영역에 모두 드래그합니다.
 3. `Reference file check`에서 파일명과 길이를 확인합니다.
-4. Reference 파일명별로 생성된 영역에서 해당 reference에 사용할 barcode 폴더들의
-   상위 폴더를 선택합니다.
+4. Reference 파일명별로 생성된 영역에 해당 barcode FASTQ를 올립니다. 실제 결과가
+   barcode별 폴더 구조라면 `Barcode folders`를 선택한 뒤 상위 폴더를 선택합니다.
 5. `분석 전 최종 확인`에서 reference별 barcode와 FASTQ 개수를 확인합니다.
 6. 왼쪽의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 `Batch settings`에서
    CPU, 병렬 sample 수, read filter 및 variant review 기준을 저장할 수 있습니다.
