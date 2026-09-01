@@ -20,6 +20,7 @@ from .sequences import SequenceRecord, parse_single_sequence, sanitize_name, wri
 
 BARCODE_RE = re.compile(r"^barcode0*([0-9]+)$", re.IGNORECASE)
 FASTQ_SUFFIXES = (".fastq", ".fq", ".fastq.gz", ".fq.gz", ".gz")
+GENERIC_READ_NAMES = {"read", "reads", "fastq", "fastq_pass", "pass", "fail"}
 
 
 class BatchPreparationError(ValueError):
@@ -79,6 +80,55 @@ def barcode_from_upload_name(value: str) -> str | None:
 
 def is_fastq_name(value: str) -> bool:
     return value.lower().endswith(FASTQ_SUFFIXES)
+
+
+def _strip_fastq_suffix(value: str) -> str:
+    lowered = value.lower()
+    for suffix in sorted(FASTQ_SUFFIXES, key=len, reverse=True):
+        if lowered.endswith(suffix):
+            return value[: -len(suffix)]
+    return value
+
+
+def sample_name_from_upload_name(value: str) -> str:
+    """Infer an ONT sample ID from a barcode, folder name, or FASTQ filename."""
+    barcode = barcode_from_upload_name(value)
+    if barcode:
+        return barcode
+    normalized = value.replace("\\", "/")
+    parts = [part for part in PurePosixPath(normalized).parts if part not in {"", "."}]
+    for part in reversed(parts[:-1]):
+        if part.casefold() not in GENERIC_READ_NAMES:
+            return sanitize_name(part, "sample")
+    filename = parts[-1] if parts else "sample"
+    return sanitize_name(_strip_fastq_suffix(filename), "sample")
+
+
+def uploaded_samples(files: Sequence[object]) -> dict[str, list[object]]:
+    """Group uploaded FASTQs by barcode, ONT alias folder, or filename.
+
+    If the browser removes all folder paths and sends repeated generic names such
+    as ``reads.fastq``, each upload is kept as a separate sample instead of being
+    silently merged.
+    """
+    grouped: dict[str, list[object]] = {}
+    fallback_number = 1
+    for uploaded in files:
+        name = str(getattr(uploaded, "name", ""))
+        if not is_fastq_name(name):
+            continue
+        sample_id = sample_name_from_upload_name(name)
+        normalized = name.replace("\\", "/")
+        has_folder = len(PurePosixPath(normalized).parts) > 1
+        if not has_folder and sample_id.casefold() in GENERIC_READ_NAMES:
+            while True:
+                candidate = f"sample_{fallback_number:02d}"
+                fallback_number += 1
+                if candidate not in grouped:
+                    sample_id = candidate
+                    break
+        grouped.setdefault(sample_id, []).append(uploaded)
+    return dict(sorted(grouped.items(), key=lambda item: natural_key(item[0])))
 
 
 def uploaded_barcodes(files: Sequence[object]) -> dict[str, list[object]]:
@@ -166,17 +216,8 @@ def prepare_batch_job(
         raise BatchPreparationError(
             "Reference file names must be unique, even when they came from different folders."
         )
-    grouped_reads = uploaded_barcodes(reads)
-    staged_reads: dict[str, list[Path]] = {}
-    for barcode, barcode_files in grouped_reads.items():
-        for index, uploaded in enumerate(barcode_files, 1):
-            original = str(getattr(uploaded, "name", f"reads_{index}.fastq.gz"))
-            relative = _safe_upload_path(original, f"reads_{index}.fastq.gz")
-            destination = upload_dir / barcode / f"{index:04d}_{relative.name}"
-            _copy_upload(uploaded, destination)
-            staged_reads.setdefault(barcode, []).append(destination.resolve())
-
-    used_barcodes: set[str] = set()
+    legacy_grouped_reads = uploaded_barcodes(reads)
+    used_legacy_barcodes: set[str] = set()
     used_samples: set[str] = set()
     manifest_samples: list[dict[str, object]] = []
     for row_index, row in enumerate(mappings, 1):
@@ -185,34 +226,65 @@ def prepare_batch_job(
         if uploaded_reference is None:
             raise BatchPreparationError(f"Reference upload not found: {reference_file}")
         record = parse_uploaded_reference(uploaded_reference)
-        raw_barcodes = row.get("barcodes", [])
-        if not isinstance(raw_barcodes, list) or not raw_barcodes:
-            raise BatchPreparationError(f"{reference_file}: assign at least one barcode.")
-        for replicate, raw_barcode in enumerate(raw_barcodes, 1):
-            barcode = normalize_barcode(str(raw_barcode))
-            if not barcode:
-                raise BatchPreparationError(f"{reference_file}: invalid barcode '{raw_barcode}'.")
-            if barcode in used_barcodes:
-                raise BatchPreparationError(f"{barcode} is assigned more than once.")
-            if barcode not in staged_reads:
-                raise BatchPreparationError(f"No uploaded FASTQ was detected for {barcode}.")
-            used_barcodes.add(barcode)
+        raw_samples = row.get("samples")
+        sample_entries: list[tuple[str, list[object]]] = []
+        if isinstance(raw_samples, list) and raw_samples:
+            for raw_sample in raw_samples:
+                if not isinstance(raw_sample, dict):
+                    raise BatchPreparationError(f"{reference_file}: invalid sample assignment.")
+                sample_id = sanitize_name(str(raw_sample.get("name", "")), "sample")
+                sample_files = raw_sample.get("files", [])
+                if not isinstance(sample_files, list) or not sample_files:
+                    raise BatchPreparationError(
+                        f"{reference_file}: no FASTQ was uploaded for {sample_id}."
+                    )
+                sample_entries.append((sample_id, sample_files))
+        else:
+            raw_barcodes = row.get("barcodes", [])
+            if not isinstance(raw_barcodes, list) or not raw_barcodes:
+                raise BatchPreparationError(f"{reference_file}: assign at least one sample.")
+            for raw_barcode in raw_barcodes:
+                barcode = normalize_barcode(str(raw_barcode))
+                if not barcode:
+                    raise BatchPreparationError(
+                        f"{reference_file}: invalid barcode '{raw_barcode}'."
+                    )
+                if barcode in used_legacy_barcodes:
+                    raise BatchPreparationError(f"{barcode} is assigned more than once.")
+                barcode_files = legacy_grouped_reads.get(barcode, [])
+                if not barcode_files:
+                    raise BatchPreparationError(f"No uploaded FASTQ was detected for {barcode}.")
+                used_legacy_barcodes.add(barcode)
+                sample_entries.append((barcode, barcode_files))
+
+        seen_ids: set[str] = set()
+        for replicate, (sample_id, sample_files) in enumerate(sample_entries, 1):
+            if sample_id in seen_ids:
+                raise BatchPreparationError(
+                    f"{reference_file}: sample name '{sample_id}' is duplicated."
+                )
+            seen_ids.add(sample_id)
             base = sanitize_name(Path(reference_file).stem, f"reference_{row_index}", max_length=52)
-            sample_name = sanitize_name(f"{base}__S{replicate}_{barcode}", max_length=80)
+            sample_name = sanitize_name(f"{base}__S{replicate}_{sample_id}", max_length=80)
             if sample_name in used_samples:
                 raise BatchPreparationError(f"Duplicate output name: {sample_name}")
             used_samples.add(sample_name)
             write_fasta(reference_dir / f"{sample_name}.fasta", SequenceRecord(sample_name, record.sequence))
             sample_data_dir = data_dir / sample_name
             sample_data_dir.mkdir(parents=True, exist_ok=True)
-            for index, source in enumerate(staged_reads[barcode], 1):
+            for index, uploaded in enumerate(sample_files, 1):
+                original = str(getattr(uploaded, "name", f"reads_{index}.fastq.gz"))
+                relative = _safe_upload_path(original, f"reads_{index}.fastq.gz")
+                source = upload_dir / sample_name / f"{index:04d}_{relative.name}"
+                _copy_upload(uploaded, source)
                 destination = sample_data_dir / f"{index:04d}_{source.name}"
-                destination.symlink_to(source)
+                destination.symlink_to(source.resolve())
             manifest_samples.append(
                 {
                     "reference_file": reference_file,
                     "reference_name": Path(reference_file).stem,
-                    "barcode": barcode,
+                    "sample_id": sample_id,
+                    "barcode": sample_id,
                     "replicate": replicate,
                     "sample_name": sample_name,
                     "reference_length": len(record.sequence),
@@ -354,7 +426,7 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
         )
 
     columns = [
-        "Reference", "Sample #", "Barcode", "Sample", "Status", "Total reads",
+        "Reference", "Sample #", "Sample ID", "Output name", "Status", "Total reads",
         "Mapping rate", "Mean depth", "Coverage 1x", "Coverage 10x", "Variants",
         "PASS variants", "REVIEW variants", "SNP", "Insertion", "Deletion",
     ]
@@ -366,8 +438,8 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
             {
                 "Reference": sample.get("reference_name"),
                 "Sample #": sample.get("replicate"),
-                "Barcode": sample.get("barcode"),
-                "Sample": sample.get("sample_name"),
+                "Sample ID": sample.get("sample_id", sample.get("barcode")),
+                "Output name": sample.get("sample_name"),
                 "Status": sample.get("status"),
                 "Total reads": sample.get("total_reads"),
                 "Mapping rate": sample.get("mapping_rate"),
