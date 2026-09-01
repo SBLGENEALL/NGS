@@ -95,6 +95,30 @@ class BatchTests(unittest.TestCase):
                     Path(tmp), references, reads, mappings, BatchSettings("test")
                 )
 
+    def test_variable_sample_counts_per_reference(self):
+        references = [
+            Upload("a.fasta", b">a\nACGTACGT\n"),
+            Upload("b.fasta", b">b\nTGCATGCA\n"),
+        ]
+        reads = [
+            Upload(f"run/barcode{number}/reads.fastq", b"@r\nACGT\n+\nIIII\n")
+            for number in (1, 2, 3)
+        ]
+        mappings = [
+            {"reference": "a.fasta", "barcodes": ["barcode01", "barcode02"]},
+            {"reference": "b.fasta", "barcodes": ["barcode03"]},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            job = prepare_batch_job(
+                Path(tmp), references, reads, mappings, BatchSettings("variable")
+            )
+            manifest = json.loads(job.manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(job.sample_count, 3)
+            self.assertEqual(
+                [sample["reference_file"] for sample in manifest["samples"]],
+                ["a.fasta", "a.fasta", "b.fasta"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
