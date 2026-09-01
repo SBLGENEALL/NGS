@@ -1,7 +1,12 @@
-# ONT Variant Explorer 사용 가이드
+# ONT Plasmid Analyzer 사용 가이드
 
 이 UI는 외부 서버로 데이터를 전송하지 않고 **현재 Linux 워크스테이션 안에서만**
 실행됩니다. 기존 `run_pipeline.sh` 명령줄 방식도 그대로 사용할 수 있습니다.
+
+공개 저장소에는 특정 회사의 이름이나 로고가 포함되지 않습니다. 사내 CI/브랜드
+담당자가 승인한 설정은 프로젝트 루트의 `branding.local.json`과
+`branding_logo.svg`(또는 PNG)에 넣을 수 있으며, 이 파일들은 Git에서 자동 제외됩니다.
+`branding.example.json`을 복사해 조직명, 문구 및 색상을 설정할 수 있습니다.
 
 ## 1. 설치
 
@@ -9,16 +14,16 @@
 
 ```bash
 cd NGS_ONT
-conda env update -n NGS_env -f environment.yml
-conda activate NGS_env
+conda env update -p /home/MCET03/conda_envs/NGS_env -f environment.yml
+conda activate /home/MCET03/conda_envs/NGS_env
 ```
 
 인터넷이 차단된 사내 서버에서는 로컬 미러만 지정할 수 있습니다.
 
 ```bash
-conda env update -n NGS_env --offline --override-channels \
-  -c file:///data/conda-repo/mirror/conda-forge/conda-forge \
-  -c file:///data/conda-repo/mirror/bioconda \
+conda env update -p /home/MCET03/conda_envs/NGS_env --offline --override-channels \
+  -c file:///data/conda_repo/mirror/conda-forge/conda-forge \
+  -c file:///data/conda_repo/mirror/bioconda \
   -f environment.yml
 ```
 
@@ -35,8 +40,8 @@ NanoFilt --version
 ## 2. UI 실행
 
 ```bash
-conda activate NGS_env
-cd NGS_ONT
+conda activate /home/MCET03/conda_envs/NGS_env
+cd /data/user/MCET03/04_ONT/NGS_ONT
 ./run_ui.sh
 ```
 
@@ -58,7 +63,23 @@ ONT_UI_PORT=8502 ./run_ui.sh
 ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 ```
 
-## 3. Quick FASTA comparison
+## 3. Batch plasmid analysis (권장)
+
+1. 최대 32개의 reference FASTA를 첫 번째 업로드 영역에 드래그합니다.
+2. `barcode13`, `barcode14` 같은 폴더들이 들어 있는 ONT run 상위 폴더를 두 번째
+   업로드 영역에서 선택합니다.
+3. UI는 barcode 번호를 숫자순으로 정렬하고 reference당 3개씩 자동 배정합니다.
+4. 매핑 표의 `Order` 또는 `Barcode 1–3`을 수정해 실제 실험 순서와 맞춥니다.
+5. 중복·누락 경고가 없는지 확인한 뒤 `Run batch analysis`를 누릅니다.
+
+결과는 reference별로 세 replicate가 한 묶음으로 표시되며 `CLEAN`,
+`VARIANT DETECTED`, `REVIEW`, `ERROR` 상태를 제공합니다. 전체 결과 요약은 CSV로
+내려받을 수 있고 BAM, VCF, consensus FASTA 및 보고서는 서버 결과 폴더에 남습니다.
+
+> 디렉터리 업로드를 위해 Streamlit 1.57 이상이 필요합니다. FASTQ는 브라우저를
+> 통해 서버로 전송되므로 분석 중 브라우저 탭을 닫지 마세요.
+
+## 4. Quick FASTA comparison
 
 Reference와 query/consensus를 각각 FASTA 업로드 또는 서열 붙여넣기로 입력합니다.
 
@@ -71,7 +92,7 @@ Reference와 query/consensus를 각각 FASTA 업로드 또는 서열 붙여넣�
 fraction은 제공하지 않습니다. 해당 신뢰도 지표가 필요하면 Raw ONT analysis를
 사용합니다.
 
-## 4. Raw ONT analysis
+## 5. Single-sample ONT analysis
 
 1. Experiment 이름과 sample/vector 이름을 입력합니다.
 2. Reference FASTA를 올리거나 전체 서열을 붙여넣습니다.
@@ -90,7 +111,7 @@ fraction은 제공하지 않습니다. 해당 신뢰도 지표가 필요하면 R
 `≥0.80`입니다. 기준 미달 call을 삭제하지 않고 `REVIEW`로 표시합니다.
 원형 reference 양 끝 50 bp와 homopolymer 인접 call도 경고로 표시됩니다.
 
-## 5. 결과 위치
+## 6. 결과 위치
 
 각 실행은 서로 섞이지 않게 다음 경로에 저장됩니다.
 
@@ -106,7 +127,7 @@ ui_runs/<실행시각>_<experiment>_<job-id>/
 UI에서 CSV, VCF.GZ, consensus FASTA, sample report를 내려받을 수 있습니다.
 BAM/BAM.BAI와 depth 파일은 크기가 클 수 있어 결과 폴더에만 보관합니다.
 
-## 6. 정확도 해석
+## 7. 정확도 해석
 
 - SNP는 이 UI에서 1-bp substitution/point mutation을 의미합니다.
 - `PASS`는 현재 선택한 QUAL, DP, allele-fraction, edge 기준을 만족합니다.
@@ -115,7 +136,7 @@ BAM/BAM.BAI와 depth 파일은 크기가 클 수 있어 결과 폴더에만 보�
   열어 read-level support를 함께 확인하는 것이 좋습니다.
 - plasmid/vector 단일 clone의 진짜 변이는 보통 높은 allele fraction을 보입니다.
 
-## 7. 테스트
+## 8. 테스트
 
 ```bash
 python -m unittest discover -s tests -v
