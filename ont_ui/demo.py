@@ -79,7 +79,7 @@ def build_demo_batch_zip() -> bytes:
                 barcode = f"barcode{barcode_number:02d}"
                 sequence, expected = _sample_sequence(reference, sample_index)
                 archive.writestr(
-                    f"demo_reads/{barcode}/reads.fastq",
+                    f"demo_reads/{reference_name}/{barcode}/reads.fastq",
                     _fastq(barcode, sequence),
                 )
                 mapping_writer.writerow(
@@ -92,10 +92,10 @@ def build_demo_batch_zip() -> bytes:
             "README.txt",
             "ONT Plasmid Analyzer synthetic demo\n"
             "===================================\n\n"
-            "1. Set Number of samples to 15.\n"
-            "2. Upload all five FASTA files in references/.\n"
-            "3. Select demo_reads/ in the barcode directory uploader.\n"
-            "4. Review the automatically balanced mapping against expected_mapping.csv.\n"
+            "1. Upload all five FASTA files in references/.\n"
+            "2. Five reference-specific upload areas will appear.\n"
+            "3. For each reference, select the folder with the same name under demo_reads/.\n"
+            "4. Review the final assignment against expected_mapping.csv.\n"
             "5. Run the batch analysis.\n\n"
             "Each reference has three example samples: exact, SNP, and 1-bp insertion.\n"
             "These synthetic sequences are for software testing only.\n",
