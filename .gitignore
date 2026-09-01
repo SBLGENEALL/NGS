@@ -15,3 +15,7 @@ branding_logo.svg
 branding_logo.png
 branding_sidebar_logo.svg
 branding_sidebar_logo.png
+
+# Local UI launcher state
+.ont_ui.pid
+ui_launcher.log
