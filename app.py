@@ -25,7 +25,6 @@ from ont_ui.batch import (
     uploaded_samples,
 )
 from ont_ui.compare import SequenceComparisonError, compare_sequences
-from ont_ui.demo import build_demo_batch_zip
 from ont_ui.models import AlignmentSummary, PipelineRunResult, VariantEvent
 from ont_ui.pipeline import (
     PipelineExecutionError,
@@ -426,15 +425,6 @@ def _quick_compare_tab(settings: dict[str, object]) -> None:
     st.write(
         "완성된 두 DNA sequence를 직접 비교해 SNP, insertion, deletion을 확인합니다."
     )
-    with st.expander("Query에는 무엇을 넣나요?", expanded=True):
-        st.write(
-            "**Query**에는 ONT read 분석 후 만들어진 **consensus FASTA**, assembly 결과, "
-            "또는 확인하려는 plasmid의 완성 서열을 넣습니다. Raw FASTQ 파일을 넣는 곳은 "
-            "아닙니다. Raw ONT read부터 분석하려면 `Batch analysis`를 사용하세요."
-        )
-        st.caption(
-            "예: Reference = 설계한 pDNA FASTA · Query = 해당 sample에서 얻은 consensus FASTA"
-        )
     left, right = st.columns(2)
     with left:
         st.markdown("#### Reference")
@@ -624,21 +614,6 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     st.write(
         "Reference를 먼저 올리면 파일명별 ONT sample upload 영역이 자동으로 생성됩니다."
     )
-
-    with st.expander("예제 데이터로 테스트하기 · 5 references / 15 samples"):
-        st.write(
-            "ZIP을 내려받아 압축을 풉니다. `references`의 FASTA 5개를 먼저 올린 뒤, "
-            "각 reference 영역에 `demo_reads/<reference 이름>/`의 FASTQ 파일 또는 "
-            "폴더를 그대로 드래그하세요."
-        )
-        st.download_button(
-            "예제 데이터 다운로드 (ZIP)",
-            data=build_demo_batch_zip(),
-            file_name="ONT_plasmid_demo_5ref_15samples.zip",
-            mime="application/zip",
-            key="download_batch_demo",
-            help="Software 테스트용 synthetic data이며 biological control로 사용할 수 없습니다.",
-        )
 
     st.markdown("#### 1 · Reference")
     reference_uploads = st.file_uploader(
