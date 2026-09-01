@@ -54,6 +54,7 @@ def _load_branding() -> dict[str, str]:
         "title": "ONT Plasmid Analyzer",
         "subtitle": "Reference-to-barcode batch mapping and variant review",
         "badge": "LOCAL RESEARCH TOOL",
+        "distributed_by": "Jongin Baek",
         "primary_color": "#2446C8",
         "secondary_color": "#23398C",
     }
@@ -83,6 +84,21 @@ def _brand_identity(branding: dict[str, str]) -> str:
                 'alt="Organization logo" class="brand-logo-image">'
             )
     return f'<div class="brand-wordmark">{html.escape(branding["organization"])}</div>'
+
+
+def _sidebar_brand_logo() -> str:
+    for filename, mime in (
+        ("branding_sidebar_logo.svg", "image/svg+xml"),
+        ("branding_sidebar_logo.png", "image/png"),
+    ):
+        path = REPOSITORY_ROOT / filename
+        if path.is_file():
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            return (
+                f'<img src="data:{mime};base64,{encoded}" '
+                'alt="Organization logo" class="sidebar-brand-logo">'
+            )
+    return ""
 
 
 def _brand_header() -> None:
@@ -896,7 +912,34 @@ def _raw_ont_tab() -> None:
 
 
 def _sidebar() -> None:
+    branding = _load_branding()
+    logo = _sidebar_brand_logo()
     with st.sidebar:
+        st.markdown(
+            """
+            <style>
+            .sidebar-brand-footer {
+                position:fixed; left:18px; bottom:14px; width:244px;
+                box-sizing:border-box; padding:12px 14px 10px;
+                background:rgba(255,255,255,.96); border:1px solid #E3E8F3;
+                border-radius:12px; box-shadow:0 6px 20px rgba(23,33,58,.08);
+                z-index:999;
+            }
+            .sidebar-brand-logo {
+                display:block; width:100%; max-width:210px; max-height:58px;
+                margin:0 auto 8px; object-fit:contain;
+            }
+            .sidebar-brand-credit {
+                color:#667085; font:500 11px/1.35 "Segoe UI",Arial,sans-serif;
+                text-align:center;
+            }
+            @media (max-height:760px) {
+                .sidebar-brand-footer { position:static; width:100%; margin-top:16px; }
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         st.markdown("### ONT Plasmid Analyzer")
         st.caption("Internal batch analysis · Local server only")
         st.info("Sequence and read data remain inside this Linux server.")
@@ -908,6 +951,14 @@ def _sidebar() -> None:
                 st.warning(f"{executable}: not found")
         st.divider()
         st.caption(f"UI result root\n`{UI_RUN_ROOT}`")
+        st.markdown(
+            (
+                '<div class="sidebar-brand-footer">'
+                f'{logo}<div class="sidebar-brand-credit">'
+                f'Distributed by {html.escape(branding["distributed_by"])}</div></div>'
+            ),
+            unsafe_allow_html=True,
+        )
 
 
 def main() -> None:
