@@ -64,6 +64,9 @@ class BatchTests(unittest.TestCase):
             )
             manifest = json.loads(job.manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(job.sample_count, 3)
+            self.assertEqual(manifest["thresholds"]["min_quality"], 20.0)
+            self.assertEqual(manifest["thresholds"]["min_depth"], 10)
+            self.assertEqual(manifest["thresholds"]["min_af"], 0.8)
             self.assertEqual(
                 [sample["barcode"] for sample in manifest["samples"]],
                 ["barcode13", "barcode14", "barcode15"],
