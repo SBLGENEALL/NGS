@@ -630,7 +630,12 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         key="batch_references",
         help="업로드한 reference 개수와 파일명에 따라 barcode upload 영역이 생성됩니다.",
     )
-    reference_uploads = list(reference_uploads or [])
+    reference_uploads = sorted(
+        list(reference_uploads or []),
+        key=lambda item: natural_key(
+            Path(str(getattr(item, "name", "reference"))).name
+        ),
+    )
     reference_names = [Path(item.name).name for item in reference_uploads]
 
     validation_errors: list[str] = []
@@ -736,10 +741,23 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     else:
                         barcode_owner[barcode] = reference_file
             elif uploaded_files:
-                st.error(
-                    "Barcode 번호를 찾지 못했습니다. 파일명 또는 폴더 경로에 "
-                    "barcode01 같은 번호가 있어야 합니다."
-                )
+                uploaded_names = [
+                    Path(str(getattr(item, "name", "FASTQ"))).name
+                    for item in uploaded_files
+                ]
+                if barcode_input_mode == "Barcode folders":
+                    st.error(
+                        "업로드 과정에서 barcode 폴더명이 전달되지 않았습니다. 현재 파일은 "
+                        f"{', '.join(uploaded_names[:3])}처럼 인식됩니다. Demo는 최신 ZIP을 "
+                        "다시 내려받아 `FASTQ files`를 선택하고 barcode01.fastq 형식의 "
+                        "파일을 올리세요. 실제 데이터도 파일명 또는 전달된 경로에 "
+                        "barcode 번호가 있어야 합니다."
+                    )
+                else:
+                    st.error(
+                        "Barcode 번호를 찾지 못했습니다. FASTQ 파일명에 "
+                        "barcode01 같은 번호가 있어야 합니다."
+                    )
             else:
                 st.caption("아직 barcode sample을 올리지 않았습니다.")
 
