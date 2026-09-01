@@ -329,7 +329,7 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
         )
 
     columns = [
-        "Reference", "Replicate", "Barcode", "Sample", "Status", "Total reads",
+        "Reference", "Sample #", "Barcode", "Sample", "Status", "Total reads",
         "Mapping rate", "Mean depth", "Coverage 1x", "Coverage 10x", "Variants",
         "PASS variants", "REVIEW variants", "SNP", "Insertion", "Deletion",
     ]
@@ -340,7 +340,7 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
         writer.writerow(
             {
                 "Reference": sample.get("reference_name"),
-                "Replicate": sample.get("replicate"),
+                "Sample #": sample.get("replicate"),
                 "Barcode": sample.get("barcode"),
                 "Sample": sample.get("sample_name"),
                 "Status": sample.get("status"),
