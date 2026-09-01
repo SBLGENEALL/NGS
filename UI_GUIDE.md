@@ -85,10 +85,13 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 ### 내장 예제 데이터
 
 Batch 화면의 `예제 데이터로 테스트하기`를 열어 ZIP을 받습니다.
-압축을 푼 뒤 `references`의 FASTA 5개를 올립니다. 생성된 각 reference 영역에서
-`demo_reads/<같은 reference 이름>/` 폴더를 선택합니다. 예제는 reference마다
-exact/SNP/insertion sample을 하나씩 포함하며 `expected_mapping.csv`에서 예상
-연결과 변이를 확인할 수 있습니다.
+압축을 푼 뒤 `references`의 FASTA 5개를 올립니다. 기본값인 `FASTQ files`를
+선택한 상태에서 각 reference 입력창에 `demo_reads/<같은 reference 이름>/`의
+barcode FASTQ 3개를 올립니다. 예제는 reference마다 exact/SNP/insertion sample을
+하나씩 포함하며 `expected_mapping.csv`에서 예상 연결과 변이를 확인할 수 있습니다.
+
+실제 ONT 결과가 barcode별 폴더와 여러 FASTQ chunk로 구성되어 있다면
+`Barcode folders`로 변경하고 해당 reference의 barcode 폴더를 선택합니다.
 
 > 디렉터리 업로드를 위해 Streamlit 1.57 이상이 필요합니다. FASTQ는 브라우저를
 > 통해 서버로 전송되므로 분석 중 브라우저 탭을 닫지 마세요.
