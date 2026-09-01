@@ -49,7 +49,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent
 UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
 
 DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
-    "Batch plasmid analysis": {
+    "Batch analysis": {
         "experiment_name": "ONT_plasmid_batch",
         "threads": 8,
         "parallel_jobs": 16,
@@ -97,7 +97,7 @@ def _load_branding() -> dict[str, str]:
     branding = {
         "organization": "PLASMID SEQUENCING",
         "title": "ONT Plasmid Analyzer",
-        "subtitle": "Reference-to-barcode batch mapping and variant review",
+        "subtitle": "Reference와 barcode 매칭 및 variant 분석",
         "badge": "LOCAL RESEARCH TOOL",
         "distributed_by": "Jongin Baek",
         "primary_color": "#2446C8",
@@ -417,10 +417,9 @@ def _render_raw_result(state: dict[str, object]) -> None:
 
 
 def _quick_compare_tab(settings: dict[str, object]) -> None:
-    st.subheader("Quick reference–sequence comparison")
+    st.subheader("Quick sequence comparison")
     st.write(
-        "Paste or upload one reference and one query/consensus sequence. The app automatically "
-        "detects orientation and reports exact SNPs, insertions, and deletions."
+        "Reference와 query/consensus sequence를 비교해 SNP, insertion, deletion을 확인합니다."
     )
     left, right = st.columns(2)
     with left:
@@ -429,14 +428,14 @@ def _quick_compare_tab(settings: dict[str, object]) -> None:
             "Reference FASTA or text",
             type=["fasta", "fa", "fna", "txt"],
             key="quick_ref_file",
-            help="Upload one reference plasmid sequence in FASTA or plain-text format.",
+            help="FASTA 또는 text 형식의 reference sequence를 올립니다.",
         )
         quick_ref_text = st.text_area(
             "Or paste reference DNA",
             height=220,
             placeholder=">reference\nACGT...",
             key="quick_ref_text",
-            help="Use this field instead of uploading a reference file.",
+            help="파일 대신 reference sequence를 직접 붙여넣을 수 있습니다.",
         )
     with right:
         st.markdown("#### Query / consensus")
@@ -444,22 +443,22 @@ def _quick_compare_tab(settings: dict[str, object]) -> None:
             "Query FASTA or text",
             type=["fasta", "fa", "fna", "txt"],
             key="quick_query_file",
-            help="Upload the assembled or consensus sequence to compare with the reference.",
+            help="Reference와 비교할 assembled 또는 consensus sequence를 올립니다.",
         )
         quick_query_text = st.text_area(
             "Or paste query DNA",
             height=220,
             placeholder=">query\nACGT...",
             key="quick_query_text",
-            help="Use this field instead of uploading a query file.",
+            help="파일 대신 query sequence를 직접 붙여넣을 수 있습니다.",
         )
 
     circular = bool(settings["circular"])
     if st.button(
-        "Compare sequences",
+        "Sequence 비교",
         type="primary",
         key="quick_run",
-        help="Align the query against the reference and report SNPs, insertions, and deletions.",
+        help="Query를 reference에 alignment하여 SNP, insertion, deletion을 표시합니다.",
     ):
         try:
             reference = _sequence_from_inputs(quick_ref_file, quick_ref_text, "reference")
@@ -620,51 +619,51 @@ def _render_batch_results(result: dict[str, object], job) -> None:
 
 def _batch_ont_tab(settings: dict[str, object]) -> None:
     expected_sample_count = int(settings["sample_count"])
-    st.subheader(f"{expected_sample_count}-sample batch analysis")
+    st.subheader(f"Batch analysis · {expected_sample_count} samples")
     st.write(
-        "Upload any number of reference sequences and the planned ONT barcode samples. "
-        "Each barcode can be assigned independently to any uploaded reference before analysis."
+        "Reference와 ONT barcode sample을 업로드한 뒤, 각 sample에 사용할 "
+        "reference를 지정합니다."
     )
     st.info(
-        "Select the run folder containing barcode01, barcode02, … folders. The folder hierarchy "
-        "is used only to identify barcode samples; reference assignments remain fully editable."
+        "`barcode01`, `barcode02` 폴더가 들어 있는 상위 폴더를 선택하세요. "
+        "Reference 매칭은 아래 표에서 변경할 수 있습니다."
     )
 
-    with st.expander("Try the included 5-reference / 15-sample demo"):
+    with st.expander("예제 데이터로 테스트하기 · 5 references / 15 samples"):
         st.write(
-            "Download and unzip the demo. Set **Number of samples** to **15**, upload the five files "
-            "inside the references folder, and select the demo_reads directory for the barcode upload."
+            "ZIP을 내려받아 압축을 풉니다. **Sample 수를 15로 설정**하고, "
+            "`references`의 FASTA 5개와 `demo_reads` 폴더를 업로드하세요."
         )
         st.download_button(
-            "Download demo dataset (ZIP)",
+            "예제 데이터 다운로드 (ZIP)",
             data=build_demo_batch_zip(),
             file_name="ONT_plasmid_demo_5ref_15samples.zip",
             mime="application/zip",
             key="download_batch_demo",
-            help="Synthetic test data only; do not use these sequences as biological controls.",
+            help="Software 테스트용 synthetic data이며 biological control로 사용할 수 없습니다.",
         )
 
     upload_columns = st.columns(2)
     with upload_columns[0]:
-        st.markdown("#### 1 · Reference sequences")
+        st.markdown("#### 1 · Reference")
         reference_uploads = st.file_uploader(
-            "Drag all reference files for this run",
+            "이번 run에 사용할 reference 파일을 모두 올리세요",
             type=["fasta", "fa", "fna", "txt"],
             accept_multiple_files=True,
             key="batch_references",
             help=(
-                "Upload one or more reference sequences. There is no fixed relationship between "
-                "the number of references and the number of barcode samples."
+                "한 개 이상의 reference를 올릴 수 있습니다. Reference 수와 barcode "
+                "sample 수는 같지 않아도 됩니다."
             ),
         )
     with upload_columns[1]:
-        st.markdown("#### 2 · ONT barcode samples")
+        st.markdown("#### 2 · ONT barcode sample")
         read_uploads = st.file_uploader(
-            "Select or drag the directory containing barcode folders",
+            "Barcode 폴더가 들어 있는 상위 폴더를 선택하세요",
             type=["fastq", "fq", "gz"],
             accept_multiple_files="directory",
             key="batch_reads",
-            help="Select a parent folder containing barcode01, barcode02, ... subfolders.",
+            help="barcode01, barcode02 등의 하위 폴더가 들어 있는 상위 폴더를 선택합니다.",
         )
 
     reference_uploads = list(reference_uploads or [])
@@ -679,7 +678,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     validation_errors: list[str] = []
     reference_rows: list[dict[str, object]] = []
     if len(set(reference_names)) != len(reference_names):
-        validation_errors.append("Reference file names must be unique.")
+        validation_errors.append("Reference 파일명은 중복될 수 없습니다.")
     for item in reference_uploads:
         try:
             record = parse_uploaded_reference(item)
@@ -690,17 +689,17 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             validation_errors.append(str(exc))
 
     upload_metrics = st.columns(4)
-    upload_metrics[0].metric("Reference files", len(reference_uploads))
+    upload_metrics[0].metric("Reference", len(reference_uploads))
     upload_metrics[1].metric(
-        "Detected samples", f"{len(barcode_names)} / {expected_sample_count}"
+        "감지된 samples", f"{len(barcode_names)} / {expected_sample_count}"
     )
-    upload_metrics[2].metric("Planned samples", expected_sample_count)
-    upload_metrics[3].metric("Uploaded FASTQ files", len(read_uploads))
+    upload_metrics[2].metric("예정 samples", expected_sample_count)
+    upload_metrics[3].metric("FASTQ files", len(read_uploads))
 
     if barcode_names and len(barcode_names) != expected_sample_count:
         st.warning(
-            f"The sidebar is set to {expected_sample_count} sample(s), but "
-            f"{len(barcode_names)} barcode folder(s) were detected."
+            f"설정한 sample은 {expected_sample_count}개이지만 barcode 폴더는 "
+            f"{len(barcode_names)}개 감지되었습니다."
         )
     if reference_rows:
         with st.expander("Reference file check"):
@@ -721,10 +720,9 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         st.session_state.pop("batch_mapping_editor", None)
 
     if reference_uploads and barcode_names:
-        st.markdown("#### 3 · Match each sample to a reference")
+        st.markdown("#### 3 · Sample–reference 매칭")
         st.caption(
-            "One row represents one barcode sample. The initial assignment is balanced across the "
-            "uploaded references; select the correct reference for every row before running."
+            "한 행이 하나의 barcode sample입니다. 각 sample에 맞는 reference를 선택하세요."
         )
         mapping_frame = st.session_state.get("batch_mapping")
         if not isinstance(mapping_frame, pd.DataFrame):
@@ -740,16 +738,16 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     min_value=1,
                     step=1,
                     required=True,
-                    help="Analysis and report order for the barcode sample.",
+                    help="분석 및 결과표에 표시할 sample 순서입니다.",
                 ),
                 "Barcode": st.column_config.TextColumn(
                     disabled=True,
-                    help="Barcode folder detected from the uploaded ONT directory.",
+                    help="업로드한 ONT 폴더에서 감지된 barcode입니다.",
                 ),
                 "Reference": st.column_config.SelectboxColumn(
                     options=reference_names,
                     required=True,
-                    help="Choose the reference sequence used to analyze this barcode sample.",
+                    help="이 barcode sample 분석에 사용할 reference를 선택합니다.",
                 ),
             },
         )
@@ -786,7 +784,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         unused_references = sorted(set(reference_names) - set(assigned_references), key=natural_key)
 
         if len(assigned_references) != len(barcode_names):
-            st.error("Choose one valid reference for every barcode sample.")
+            st.error("모든 barcode sample에 reference를 지정하세요.")
         if invalid_barcodes:
             st.error("Invalid barcode assignments: " + ", ".join(invalid_barcodes))
         if invalid_references:
@@ -796,7 +794,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         if missing:
             st.error("Uploaded but not assigned: " + ", ".join(missing))
         if unused_references:
-            st.warning("Uploaded references not currently used: " + ", ".join(unused_references))
+            st.warning("현재 사용되지 않은 reference: " + ", ".join(unused_references))
 
         can_run = (
             not validation_errors
@@ -809,12 +807,12 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             and len(assigned_references) == expected_sample_count
         )
         if st.button(
-            f"Run batch analysis ({len(assigned_barcodes)} samples)",
+            f"Batch analysis 실행 ({len(assigned_barcodes)} samples)",
             type="primary",
             disabled=not can_run,
             key="batch_run",
             use_container_width=True,
-            help="Run all mapped barcode samples with the saved Analysis settings.",
+            help="저장된 Analysis settings로 매칭된 sample을 분석합니다.",
         ):
             try:
                 grouped_mapping: dict[str, list[str]] = {}
@@ -1035,31 +1033,31 @@ def _raw_ont_tab(settings: dict[str, object]) -> None:
 def _settings_page(mode: str) -> None:
     current = _analysis_settings(mode)
     st.subheader("Analysis settings")
-    st.caption(f"Settings for **{mode}**. Hover over each `?` icon for an explanation.")
+    st.caption(f"**{mode}** 설정입니다. 각 `?`에 커서를 올리면 설명을 볼 수 있습니다.")
 
     with st.form(f"settings_form_{mode}"):
         updated: dict[str, object] = {}
-        if mode == "Batch plasmid analysis":
+        if mode == "Batch analysis":
             first, second = st.columns(2)
             with first:
                 updated["experiment_name"] = st.text_input(
                     "Experiment name",
                     value=str(current["experiment_name"]),
-                    help="Name of the output folder created under ui_runs.",
+                    help="ui_runs 아래에 생성되는 결과 폴더명입니다.",
                 )
                 updated["threads"] = st.number_input(
                     "Threads per sample",
                     min_value=1,
                     max_value=64,
                     value=int(current["threads"]),
-                    help="CPU threads assigned to each barcode sample. Eight is a safe default.",
+                    help="Barcode sample 하나에 사용할 CPU threads입니다. 기본값은 8입니다.",
                 )
                 updated["parallel_jobs"] = st.number_input(
                     "Parallel samples",
                     min_value=1,
                     max_value=64,
                     value=int(current["parallel_jobs"]),
-                    help="Maximum number of barcode samples processed at the same time.",
+                    help="동시에 처리할 barcode sample의 최대 개수입니다.",
                 )
             with second:
                 updated["min_length"] = st.number_input(
@@ -1067,14 +1065,14 @@ def _settings_page(mode: str) -> None:
                     min_value=0,
                     value=int(current["min_length"]),
                     step=50,
-                    help="Reads shorter than this length are removed. Use 300 if coverage is low.",
+                    help="이 길이보다 짧은 read를 제외합니다. Coverage가 낮으면 300을 고려하세요.",
                 )
                 updated["min_quality"] = st.number_input(
                     "Minimum mean Q",
                     min_value=0,
                     value=int(current["min_quality"]),
                     step=1,
-                    help="Reads below this mean Phred quality score are removed. Use Q8 if coverage is low.",
+                    help="평균 Phred quality가 이 값보다 낮은 read를 제외합니다. 기본값은 Q10입니다.",
                 )
         elif mode == "Quick sequence comparison":
             updated["circular"] = st.checkbox(
@@ -1166,12 +1164,12 @@ def _settings_page(mode: str) -> None:
                     help="Calls this close to a linear reference edge are marked for review.",
                 )
 
-        submitted = st.form_submit_button("Save settings", type="primary")
+        submitted = st.form_submit_button("설정 저장", type="primary")
     if submitted:
         all_settings = st.session_state["saved_analysis_settings"]
         all_settings[mode] = updated
-        st.success("Analysis settings were saved for this session.")
-    st.button("← Back to analysis", on_click=_close_settings_page)
+        st.success("Analysis settings를 저장했습니다.")
+    st.button("← 분석 화면으로", on_click=_close_settings_page)
 
 
 def _sidebar() -> tuple[str, dict[str, object]]:
@@ -1218,63 +1216,64 @@ def _sidebar() -> tuple[str, dict[str, object]]:
                 border-color:rgba(255,255,255,.72);
             }
             .sidebar-brand-footer {
-                position:fixed; left:1rem; bottom:1rem; width:19rem;
-                box-sizing:border-box; z-index:999;
+                position:fixed; left:1.5rem; bottom:1rem; width:220px;
+                box-sizing:border-box; z-index:999; padding:10px 12px 8px;
+                background:rgba(255,255,255,.96); border-radius:14px;
+                box-shadow:0 8px 24px rgba(16,25,90,.18);
             }
             .sidebar-brand-logo {
-                display:block; width:100%; height:76px; object-fit:cover;
-                object-position:center; border-radius:12px;
-                box-shadow:0 8px 24px rgba(16,25,90,.22);
+                display:block; width:100%; height:52px; object-fit:contain;
+                object-position:center; margin:0 auto;
             }
             .sidebar-brand-wordmark {
-                color:#FFFFFF; font:700 17px/1.2 Arial,sans-serif;
+                color:#244092; font:700 17px/1.2 Arial,sans-serif;
                 letter-spacing:.04em; text-align:center; padding:18px 8px 10px;
             }
             .sidebar-brand-credit {
-                color:rgba(255,255,255,.88); font:500 11px/1.35 "Segoe UI",Arial,sans-serif;
-                text-align:center; margin-top:7px;
+                color:#667085; font:500 11px/1.35 "Segoe UI",Arial,sans-serif;
+                text-align:center; margin-top:5px;
             }
             </style>
             """,
             unsafe_allow_html=True,
         )
         st.markdown("### ONT Plasmid Analyzer")
-        st.caption("Local ONT plasmid variant analysis")
+        st.caption("ONT plasmid 변이 분석")
         mode = st.radio(
-            "Analysis menu",
-            ["Batch plasmid analysis", "Quick sequence comparison", "Single-sample ONT analysis"],
+            "분석 메뉴",
+            ["Batch analysis", "Quick sequence comparison"],
             key="analysis_mode",
             on_change=_close_settings_page,
             help=(
-                "Batch maps uploaded barcode samples to their references. Quick comparison aligns "
-                "two assembled sequences. Single-sample runs the complete ONT read pipeline."
+                "Batch analysis는 raw ONT sample을 분석합니다. Quick comparison은 완성된 "
+                "두 sequence의 차이만 빠르게 확인합니다."
             ),
         )
 
         sample_count = int(st.session_state.get("planned_sample_count", 1))
-        if mode == "Batch plasmid analysis":
-            st.markdown("#### Run setup")
+        if mode == "Batch analysis":
+            st.markdown("#### 분석 구성")
             sample_count = int(
                 st.number_input(
-                    "Number of samples",
+                    "Sample 수",
                     min_value=1,
                     max_value=96,
                     value=sample_count,
                     step=1,
                     help=(
-                        "Select the total number of barcode samples in this run. References and "
-                        "replicate counts are assigned freely in the mapping table."
+                        "이번 run에서 분석할 전체 barcode sample 수입니다. 각 sample의 "
+                        "reference는 매칭표에서 자유롭게 지정할 수 있습니다."
                     ),
                 )
             )
             st.session_state["planned_sample_count"] = sample_count
-            st.caption(f"Plan: {sample_count} barcode sample(s)")
+            st.caption(f"분석 예정: barcode sample {sample_count}개")
 
         st.button(
             "⚙ Analysis settings",
             use_container_width=True,
             on_click=_open_settings_page,
-            help="Open the settings for the selected analysis in the center workspace.",
+            help="선택한 분석의 설정을 가운데 화면에서 변경합니다.",
         )
         st.markdown(
             (
@@ -1286,7 +1285,7 @@ def _sidebar() -> tuple[str, dict[str, object]]:
         )
 
     settings = dict(_analysis_settings(mode))
-    if mode == "Batch plasmid analysis":
+    if mode == "Batch analysis":
         settings["sample_count"] = sample_count
     return mode, settings
 
@@ -1300,7 +1299,7 @@ def main() -> None:
     _brand_header()
     if st.session_state.get("show_analysis_settings", False):
         _settings_page(mode)
-    elif mode == "Batch plasmid analysis":
+    elif mode == "Batch analysis":
         _batch_ont_tab(settings)
     elif mode == "Quick sequence comparison":
         _quick_compare_tab(settings)
