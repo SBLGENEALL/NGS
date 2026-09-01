@@ -22,7 +22,7 @@ from ont_ui.batch import (
     parse_uploaded_reference,
     prepare_batch_job,
     run_batch_job,
-    uploaded_barcodes,
+    uploaded_samples,
 )
 from ont_ui.compare import SequenceComparisonError, compare_sequences
 from ont_ui.demo import build_demo_batch_zip
@@ -102,7 +102,7 @@ def _load_branding() -> dict[str, str]:
     branding = {
         "organization": "PLASMID SEQUENCING",
         "title": "ONT Plasmid Analyzer",
-        "subtitle": "Reference와 barcode 매칭 및 variant 분석",
+        "subtitle": "Reference와 ONT sample 매칭 및 variant 분석",
         "badge": "LOCAL RESEARCH TOOL",
         "distributed_by": "Jongin Baek",
         "primary_color": "#2446C8",
@@ -424,16 +424,25 @@ def _render_raw_result(state: dict[str, object]) -> None:
 def _quick_compare_tab(settings: dict[str, object]) -> None:
     st.subheader("Quick sequence comparison")
     st.write(
-        "Reference와 query/consensus sequence를 비교해 SNP, insertion, deletion을 확인합니다."
+        "완성된 두 DNA sequence를 직접 비교해 SNP, insertion, deletion을 확인합니다."
     )
+    with st.expander("Query에는 무엇을 넣나요?", expanded=True):
+        st.write(
+            "**Query**에는 ONT read 분석 후 만들어진 **consensus FASTA**, assembly 결과, "
+            "또는 확인하려는 plasmid의 완성 서열을 넣습니다. Raw FASTQ 파일을 넣는 곳은 "
+            "아닙니다. Raw ONT read부터 분석하려면 `Batch analysis`를 사용하세요."
+        )
+        st.caption(
+            "예: Reference = 설계한 pDNA FASTA · Query = 해당 sample에서 얻은 consensus FASTA"
+        )
     left, right = st.columns(2)
     with left:
         st.markdown("#### Reference")
         quick_ref_file = st.file_uploader(
-            "Reference FASTA or text",
+            "설계 Reference FASTA or text",
             type=["fasta", "fa", "fna", "txt"],
             key="quick_ref_file",
-            help="FASTA 또는 text 형식의 reference sequence를 올립니다.",
+            help="비교 기준이 되는 원래 plasmid/vector 설계 서열입니다.",
         )
         quick_ref_text = st.text_area(
             "Or paste reference DNA",
@@ -445,10 +454,10 @@ def _quick_compare_tab(settings: dict[str, object]) -> None:
     with right:
         st.markdown("#### Query / consensus")
         quick_query_file = st.file_uploader(
-            "Query FASTA or text",
+            "Query / consensus FASTA or text",
             type=["fasta", "fa", "fna", "txt"],
             key="quick_query_file",
-            help="Reference와 비교할 assembled 또는 consensus sequence를 올립니다.",
+            help="ONT 분석으로 얻은 consensus 또는 assembled plasmid 전체 서열입니다. Raw FASTQ는 사용할 수 없습니다.",
         )
         quick_query_text = st.text_area(
             "Or paste query DNA",
@@ -520,7 +529,7 @@ def _render_batch_results(result: dict[str, object], job) -> None:
             {
                 "Reference": sample.get("reference_name"),
                 "Sample #": sample.get("replicate"),
-                "Barcode": sample.get("barcode"),
+                "Sample ID": sample.get("sample_id", sample.get("barcode")),
                 "Status": sample.get("status"),
                 "Mapping rate (%)": (
                     float(sample["mapping_rate"]) * 100
@@ -564,7 +573,8 @@ def _render_batch_results(result: dict[str, object], job) -> None:
     for reference_name, group_samples in groups.items():
         assert isinstance(group_samples, list)
         labels = ", ".join(
-            f"{sample.get('barcode')}: {sample.get('status')}" for sample in group_samples
+            f"{sample.get('sample_id', sample.get('barcode'))}: {sample.get('status')}"
+            for sample in group_samples
         )
         with st.expander(f"{reference_name}  ·  {labels}"):
             for start in range(0, len(group_samples), 3):
@@ -577,7 +587,8 @@ def _render_batch_results(result: dict[str, object], job) -> None:
                             unsafe_allow_html=True,
                         )
                         st.write(
-                            f"**{sample.get('barcode')} · Sample {sample.get('replicate')}**"
+                            f"**{sample.get('sample_id', sample.get('barcode'))} · "
+                            f"Sample {sample.get('replicate')}**"
                         )
                         if sample.get("status") == "ERROR":
                             st.error(str(sample.get("message", "Analysis failed.")))
@@ -599,19 +610,26 @@ def _render_batch_results(result: dict[str, object], job) -> None:
                             st.dataframe(
                                 pd.DataFrame(details), hide_index=True, use_container_width=True
                             )
+    log_path = job.job_dir / "pipeline.log"
+    if log_path.is_file():
+        with st.expander("Analysis log · 필요할 때만 열기", expanded=False):
+            st.code(
+                log_path.read_text(encoding="utf-8", errors="replace"),
+                language="text",
+            )
 
 
 def _batch_ont_tab(settings: dict[str, object]) -> None:
     st.subheader("Batch analysis")
     st.write(
-        "Reference를 먼저 올리면 파일명별 barcode upload 영역이 자동으로 생성됩니다."
+        "Reference를 먼저 올리면 파일명별 ONT sample upload 영역이 자동으로 생성됩니다."
     )
 
     with st.expander("예제 데이터로 테스트하기 · 5 references / 15 samples"):
         st.write(
             "ZIP을 내려받아 압축을 풉니다. `references`의 FASTA 5개를 먼저 올린 뒤, "
-            "`Barcode 입력 형식`을 `FASTQ files`로 두고, 각 reference 영역에 "
-            "`demo_reads/<reference 이름>/`의 barcode FASTQ 3개를 올리세요."
+            "각 reference 영역에 `demo_reads/<reference 이름>/`의 FASTQ 파일 또는 "
+            "폴더를 그대로 드래그하세요."
         )
         st.download_button(
             "예제 데이터 다운로드 (ZIP)",
@@ -628,7 +646,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         type=["fasta", "fa", "fna", "txt"],
         accept_multiple_files=True,
         key="batch_references",
-        help="업로드한 reference 개수와 파일명에 따라 barcode upload 영역이 생성됩니다.",
+        help="업로드한 reference 개수와 파일명에 따라 ONT sample 영역이 생성됩니다.",
     )
     reference_uploads = sorted(
         list(reference_uploads or []),
@@ -660,118 +678,99 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     all_reads: list[object] = []
     mappings: list[dict[str, object]] = []
     assignment_rows: list[dict[str, object]] = []
-    invalid_read_names: list[str] = []
-    barcode_owner: dict[str, str] = {}
-    duplicate_barcodes: list[str] = []
 
     if reference_uploads:
-        st.markdown("#### 2 · Reference별 ONT barcode sample")
+        st.markdown("#### 2 · Reference별 ONT sample")
         st.caption(
-            "각 영역에 해당 reference의 barcode FASTQ 또는 barcode folder를 올리세요."
+            "각 영역에 해당 FASTQ 파일 또는 sample 폴더를 그대로 드래그하세요. "
+            "barcode 번호와 사용자 지정 ONT sample name을 모두 인식합니다."
         )
-        barcode_input_mode = st.radio(
-            "Barcode 입력 형식",
-            ["FASTQ files", "Barcode folders"],
-            horizontal=True,
-            help=(
-                "파일명에 barcode01 같은 번호가 있으면 FASTQ files를 선택합니다. "
-                "Barcode 번호가 폴더명에만 있으면 Barcode folders를 선택합니다."
-            ),
-        )
-    else:
-        barcode_input_mode = "FASTQ files"
 
     for index, reference_file in enumerate(reference_names, 1):
         reference_label = Path(reference_file).stem
         with st.expander(f"{index} · {reference_label}", expanded=True):
-            if barcode_input_mode == "FASTQ files":
-                uploaded = st.file_uploader(
-                    f"{reference_label}의 barcode FASTQ",
-                    type=["fastq", "fq", "gz"],
-                    accept_multiple_files=True,
-                    key=f"batch_files_{index}_{sanitize_name(reference_label)}",
-                    help="파일명에 barcode01, barcode02 같은 번호가 있는 FASTQ를 올립니다.",
-                )
-            else:
-                uploaded = st.file_uploader(
-                    f"{reference_label}의 barcode folder",
-                    type=["fastq", "fq", "gz"],
-                    accept_multiple_files="directory",
-                    key=f"batch_folders_{index}_{sanitize_name(reference_label)}",
-                    help=(
-                        "Barcode 폴더들이 들어 있는 상위 폴더를 선택합니다. "
-                        "폴더명에 barcode01과 같은 번호가 있어야 합니다."
-                    ),
-                )
+            uploaded = st.file_uploader(
+                f"{reference_label}의 ONT FASTQ / sample folder",
+                type=["fastq", "fq", "gz"],
+                accept_multiple_files="directory",
+                key=f"batch_reads_{index}_{sanitize_name(reference_label)}",
+                help=(
+                    "FASTQ 파일 또는 FASTQ가 들어 있는 폴더를 드래그합니다. Sample ID는 "
+                    "barcode 번호, 폴더명 또는 FASTQ 파일명에서 자동으로 가져옵니다."
+                ),
+            )
             uploaded_files = list(uploaded or [])
-            grouped = uploaded_barcodes(uploaded_files)
-            recognized_files = {
-                id(item)
-                for barcode_files in grouped.values()
-                for item in barcode_files
-            }
-            unrecognized = [
-                str(getattr(item, "name", "FASTQ"))
-                for item in uploaded_files
-                if id(item) not in recognized_files
-            ]
-            invalid_read_names.extend(unrecognized)
+            grouped = uploaded_samples(uploaded_files)
 
             if grouped:
-                barcode_list = list(grouped)
+                detected_ids = list(grouped)
+                with st.expander("Sample ID 확인/수정", expanded=False):
+                    st.caption(
+                        "자동 인식된 이름이 실제 ONT sample name과 다르면 Sample ID를 수정하세요. "
+                        "여러 FASTQ chunk를 하나로 묶으려면 같은 Sample ID를 입력합니다."
+                    )
+                    editor_rows = pd.DataFrame(
+                        [
+                            {
+                                "Detected input": sample_id,
+                                "Sample ID": sample_id,
+                                "FASTQ files": len(grouped[sample_id]),
+                            }
+                            for sample_id in detected_ids
+                        ]
+                    )
+                    editor_key_suffix = abs(
+                        hash(tuple(str(getattr(item, "name", "")) for item in uploaded_files))
+                    )
+                    edited_rows = st.data_editor(
+                        editor_rows,
+                        hide_index=True,
+                        use_container_width=True,
+                        disabled=["Detected input", "FASTQ files"],
+                        key=(
+                            f"sample_ids_{index}_{sanitize_name(reference_label)}_"
+                            f"{editor_key_suffix}"
+                        ),
+                        column_config={
+                            "Sample ID": st.column_config.TextColumn(
+                                help="결과에 표시할 ONT sample name입니다.", required=True
+                            )
+                        },
+                    )
+                renamed_groups: dict[str, list[object]] = {}
+                for row in edited_rows.to_dict("records"):
+                    detected_id = str(row["Detected input"])
+                    sample_id = sanitize_name(str(row["Sample ID"]), detected_id)
+                    renamed_groups.setdefault(sample_id, []).extend(grouped[detected_id])
+                grouped = dict(
+                    sorted(renamed_groups.items(), key=lambda item: natural_key(item[0]))
+                )
+                sample_ids = list(grouped)
                 st.success(
-                    f"{len(barcode_list)} samples 감지: " + ", ".join(barcode_list)
+                    f"{len(sample_ids)} samples 감지: " + ", ".join(sample_ids)
                 )
                 mappings.append(
-                    {"reference": reference_file, "barcodes": barcode_list}
+                    {
+                        "reference": reference_file,
+                        "samples": [
+                            {"name": sample_id, "files": grouped[sample_id]}
+                            for sample_id in sample_ids
+                        ],
+                    }
                 )
                 all_reads.extend(uploaded_files)
                 assignment_rows.append(
                     {
                         "Reference": reference_file,
-                        "Samples": len(barcode_list),
-                        "Barcode": ", ".join(barcode_list),
+                        "Samples": len(sample_ids),
+                        "Sample ID": ", ".join(sample_ids),
                         "FASTQ files": len(uploaded_files),
                     }
                 )
-                for barcode in barcode_list:
-                    previous = barcode_owner.get(barcode)
-                    if previous is not None:
-                        duplicate_barcodes.append(barcode)
-                    else:
-                        barcode_owner[barcode] = reference_file
             elif uploaded_files:
-                uploaded_names = [
-                    Path(str(getattr(item, "name", "FASTQ"))).name
-                    for item in uploaded_files
-                ]
-                if barcode_input_mode == "Barcode folders":
-                    st.error(
-                        "업로드 과정에서 barcode 폴더명이 전달되지 않았습니다. 현재 파일은 "
-                        f"{', '.join(uploaded_names[:3])}처럼 인식됩니다. Demo는 최신 ZIP을 "
-                        "다시 내려받아 `FASTQ files`를 선택하고 barcode01.fastq 형식의 "
-                        "파일을 올리세요. 실제 데이터도 파일명 또는 전달된 경로에 "
-                        "barcode 번호가 있어야 합니다."
-                    )
-                else:
-                    st.error(
-                        "Barcode 번호를 찾지 못했습니다. FASTQ 파일명에 "
-                        "barcode01 같은 번호가 있어야 합니다."
-                    )
+                st.error("분석 가능한 FASTQ/FASTQ.GZ 파일을 찾지 못했습니다.")
             else:
-                st.caption("아직 barcode sample을 올리지 않았습니다.")
-
-    if invalid_read_names:
-        st.error(
-            "Barcode 경로를 확인할 수 없는 FASTQ가 있습니다: "
-            + ", ".join(invalid_read_names[:5])
-        )
-    duplicate_barcodes = sorted(set(duplicate_barcodes), key=natural_key)
-    if duplicate_barcodes:
-        st.error(
-            "두 개 이상의 reference에 중복된 barcode가 있습니다: "
-            + ", ".join(duplicate_barcodes)
-        )
+                st.caption("아직 ONT sample을 올리지 않았습니다.")
 
     if assignment_rows:
         st.markdown("#### 3 · 분석 전 최종 확인")
@@ -791,13 +790,11 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         bool(reference_uploads) and len(mappings) == len(reference_uploads)
     )
     if reference_uploads and not every_reference_has_reads:
-        st.warning("모든 reference 영역에 한 개 이상의 barcode sample을 올리세요.")
+        st.warning("모든 reference 영역에 한 개 이상의 ONT sample을 올리세요.")
 
     can_run = (
         every_reference_has_reads
         and not validation_errors
-        and not invalid_read_names
-        and not duplicate_barcodes
         and total_samples > 0
     )
     if st.button(
@@ -806,7 +803,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         disabled=not can_run,
         key="batch_run",
         use_container_width=True,
-        help="각 reference 영역에 연결된 barcode sample을 분석합니다.",
+        help="각 reference 영역에 연결된 ONT sample을 분석합니다.",
     ):
         try:
             missing_tools = [
@@ -838,8 +835,9 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     mappings,
                     batch_settings,
                 )
-            log_box = st.empty()
             progress_box = st.empty()
+            with st.expander("Analysis log · 실행 중 상세 command", expanded=False):
+                log_box = st.empty()
             log_lines: list[str] = []
             completed = 0
 
@@ -1042,14 +1040,14 @@ def _settings_page(mode: str) -> None:
                     min_value=1,
                     max_value=64,
                     value=int(current["threads"]),
-                    help="Barcode sample 하나에 사용할 CPU threads입니다. 기본값은 8입니다.",
+                    help="ONT sample 하나에 사용할 CPU threads입니다. 기본값은 8입니다.",
                 )
                 updated["parallel_jobs"] = st.number_input(
                     "Parallel samples",
                     min_value=1,
                     max_value=64,
                     value=int(current["parallel_jobs"]),
-                    help="동시에 처리할 barcode sample의 최대 개수입니다.",
+                    help="동시에 처리할 ONT sample의 최대 개수입니다.",
                 )
                 updated["min_length"] = st.number_input(
                     "Minimum read length",
