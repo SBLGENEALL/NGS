@@ -11,6 +11,7 @@ from ont_ui.batch import (
     natural_key,
     prepare_batch_job,
     uploaded_barcodes,
+    uploaded_samples,
 )
 
 
@@ -49,6 +50,39 @@ class BatchTests(unittest.TestCase):
             Upload("run/barcode2/a.fastq.gz", b"x"),
         ]
         self.assertEqual(list(uploaded_barcodes(uploads)), ["barcode02", "barcode10"])
+
+    def test_uploaded_samples_accept_alias_folder_and_filename(self):
+        uploads = [
+            Upload("Clone_A/fastq_pass/chunk01.fastq.gz", b"x"),
+            Upload("Clone_A/fastq_pass/chunk02.fastq.gz", b"x"),
+            Upload("Custom_plasmid.fastq", b"x"),
+        ]
+        grouped = uploaded_samples(uploads)
+        self.assertEqual(list(grouped), ["Clone_A", "Custom_plasmid"])
+        self.assertEqual(len(grouped["Clone_A"]), 2)
+
+    def test_generic_reads_are_not_silently_merged(self):
+        grouped = uploaded_samples(
+            [Upload("reads.fastq", b"x"), Upload("reads.fastq", b"y")]
+        )
+        self.assertEqual(list(grouped), ["sample_01", "sample_02"])
+
+    def test_prepare_custom_named_sample(self):
+        reference = Upload("vector.fasta", b">ref\nACGTACGT\n")
+        reads = [Upload("Clone_A.fastq", b"@r\nACGT\n+\nIIII\n")]
+        mappings = [
+            {
+                "reference": "vector.fasta",
+                "samples": [{"name": "Clone_A", "files": reads}],
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            job = prepare_batch_job(
+                Path(tmp), [reference], reads, mappings, BatchSettings("custom")
+            )
+            manifest = json.loads(job.manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["samples"][0]["sample_id"], "Clone_A")
+            self.assertIn("Clone_A", manifest["samples"][0]["sample_name"])
 
     def test_prepare_three_replicates_for_one_reference(self):
         reference = Upload("C-5.pPB-161.fasta", b">ref\nACGTACGT\n")
