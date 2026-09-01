@@ -21,8 +21,9 @@ conda activate NGS_env
 확인할 수 있습니다. 앱은 일관된 light theme와 브랜드 그라데이션 sidebar를 사용합니다.
 
 1. **Batch analysis**: 필요한 reference를 먼저 업로드하면 reference 파일명별
-   barcode upload 영역이 자동 생성됩니다. 각 영역에 해당 barcode 폴더를 넣으므로
-   별도의 sample 수 입력이나 매칭표 작성이 필요하지 않습니다.
+   barcode upload 영역이 자동 생성됩니다. 각 영역에는 barcode FASTQ 파일 또는
+   barcode 폴더를 넣을 수 있어 별도의 sample 수 입력이나 매칭표 작성이 필요하지
+   않습니다.
    화면에서 바로 받을 수 있는 5-reference/15-sample synthetic demo도 제공합니다.
 2. **Quick sequence comparison**: reference와 query/consensus 서열을 붙여넣거나
    업로드하여 SNP(point mutation), insertion, deletion을 즉시 비교합니다.
