@@ -5,11 +5,25 @@ from __future__ import annotations
 
 import os
 import shutil
+import base64
+import html
+import json
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+from ont_ui.batch import (
+    BatchExecutionError,
+    BatchPreparationError,
+    BatchSettings,
+    collect_batch_results,
+    natural_key,
+    parse_uploaded_reference,
+    prepare_batch_job,
+    run_batch_job,
+    uploaded_barcodes,
+)
 from ont_ui.compare import SequenceComparisonError, compare_sequences
 from ont_ui.models import AlignmentSummary, PipelineRunResult, VariantEvent
 from ont_ui.pipeline import (
@@ -32,6 +46,104 @@ from ont_ui.sequences import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
+
+
+def _load_branding() -> dict[str, str]:
+    branding = {
+        "organization": "PLASMID SEQUENCING",
+        "title": "ONT Plasmid Analyzer",
+        "subtitle": "Reference-to-barcode batch mapping and variant review",
+        "badge": "LOCAL RESEARCH TOOL",
+        "primary_color": "#2446C8",
+        "secondary_color": "#23398C",
+    }
+    config_path = REPOSITORY_ROOT / "branding.local.json"
+    if config_path.is_file():
+        try:
+            values = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(values, dict):
+                for key in branding:
+                    if isinstance(values.get(key), str) and values[key].strip():
+                        branding[key] = values[key].strip()
+        except (OSError, json.JSONDecodeError):
+            pass
+    return branding
+
+
+def _brand_identity(branding: dict[str, str]) -> str:
+    for filename, mime in (
+        ("branding_logo.svg", "image/svg+xml"),
+        ("branding_logo.png", "image/png"),
+    ):
+        path = REPOSITORY_ROOT / filename
+        if path.is_file():
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            return (
+                f'<img src="data:{mime};base64,{encoded}" '
+                'alt="Organization logo" class="brand-logo-image">'
+            )
+    return f'<div class="brand-wordmark">{html.escape(branding["organization"])}</div>'
+
+
+def _brand_header() -> None:
+    branding = _load_branding()
+    identity = _brand_identity(branding)
+    markup = """
+        <style>
+        :root {
+            --brand-primary: __PRIMARY__;
+            --brand-secondary: __SECONDARY__;
+            --ink: #17213A;
+        }
+        .stApp { background: linear-gradient(180deg, #F6F8FC 0, #FFFFFF 240px); }
+        .brand-shell {
+            display:flex; align-items:center; justify-content:space-between; gap:24px;
+            padding:22px 28px; border-radius:18px; color:white; margin-bottom:20px;
+            background:linear-gradient(120deg, var(--brand-primary) 0%, var(--brand-secondary) 62%, #5268D3 100%);
+            box-shadow:0 12px 34px rgba(20,40,160,.20);
+        }
+        .brand-wordmark { font:700 19px/1 Arial,sans-serif; letter-spacing:.02em; }
+        .brand-logo-image { display:block; max-width:240px; max-height:52px; object-fit:contain; }
+        .brand-title { font:700 30px/1.15 "Segoe UI",Arial,sans-serif; margin-top:12px; }
+        .brand-subtitle { opacity:.85; margin-top:6px; font-size:14px; }
+        .brand-pill {
+            border:1px solid rgba(255,255,255,.45); border-radius:999px;
+            padding:8px 13px; white-space:nowrap; font-size:12px; font-weight:600;
+        }
+        [data-testid="stMetric"] {
+            background:#FFFFFF; border:1px solid #E3E8F3; border-radius:13px; padding:12px;
+        }
+        div[data-testid="stFileUploader"] section {
+            background:#FBFCFF; border:1.5px dashed #8A98D6; border-radius:14px;
+        }
+        .status-clean { color:#087A55; font-weight:700; }
+        .status-variant { color:var(--brand-primary); font-weight:700; }
+        .status-review { color:#B05D00; font-weight:700; }
+        .status-error { color:#B42318; font-weight:700; }
+        </style>
+        <div class="brand-shell">
+          <div>
+            __IDENTITY__
+            <div class="brand-title">__TITLE__</div>
+            <div class="brand-subtitle">__SUBTITLE__</div>
+          </div>
+          <div class="brand-pill">__BADGE__</div>
+        </div>
+        """
+    replacements = {
+        "__PRIMARY__": html.escape(branding["primary_color"]),
+        "__SECONDARY__": html.escape(branding["secondary_color"]),
+        "__IDENTITY__": identity,
+        "__TITLE__": html.escape(branding["title"]),
+        "__SUBTITLE__": html.escape(branding["subtitle"]),
+        "__BADGE__": html.escape(branding["badge"]),
+    }
+    for token, value in replacements.items():
+        markup = markup.replace(token, value)
+    st.markdown(
+        markup,
+        unsafe_allow_html=True,
+    )
 
 
 def _uploaded_text(uploaded) -> str:
@@ -295,6 +407,342 @@ def _quick_compare_tab() -> None:
         _render_quick_result(quick_state["result"], quick_state["reference"])
 
 
+def _default_batch_mapping(reference_files, barcode_names: list[str]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for index, uploaded in enumerate(reference_files):
+        assigned = barcode_names[index * 3 : index * 3 + 3]
+        rows.append(
+            {
+                "Order": index + 1,
+                "Reference": Path(uploaded.name).name,
+                "Barcode 1": assigned[0] if len(assigned) > 0 else "",
+                "Barcode 2": assigned[1] if len(assigned) > 1 else "",
+                "Barcode 3": assigned[2] if len(assigned) > 2 else "",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _result_status_html(status: str) -> str:
+    css = {
+        "CLEAN": "status-clean",
+        "VARIANT": "status-variant",
+        "REVIEW": "status-review",
+        "ERROR": "status-error",
+    }.get(status, "status-review")
+    label = {
+        "CLEAN": "● CLEAN",
+        "VARIANT": "● VARIANT DETECTED",
+        "REVIEW": "● REVIEW",
+        "ERROR": "● ERROR",
+    }.get(status, status)
+    return f'<span class="{css}">{label}</span>'
+
+
+def _render_batch_results(result: dict[str, object], job) -> None:
+    st.divider()
+    st.subheader("Batch analysis results")
+    samples = result.get("samples", [])
+    assert isinstance(samples, list)
+    counts = {
+        status: sum(sample.get("status") == status for sample in samples)
+        for status in ("CLEAN", "VARIANT", "REVIEW", "ERROR")
+    }
+    metrics = st.columns(5)
+    metrics[0].metric("Total samples", len(samples))
+    metrics[1].metric("Clean", counts["CLEAN"])
+    metrics[2].metric("Variant detected", counts["VARIANT"])
+    metrics[3].metric("Review", counts["REVIEW"])
+    metrics[4].metric("Error", counts["ERROR"])
+
+    summary_rows = []
+    for sample in samples:
+        summary_rows.append(
+            {
+                "Reference": sample.get("reference_name"),
+                "Replicate": sample.get("replicate"),
+                "Barcode": sample.get("barcode"),
+                "Status": sample.get("status"),
+                "Mapping rate (%)": (
+                    float(sample["mapping_rate"]) * 100
+                    if sample.get("mapping_rate") is not None
+                    else None
+                ),
+                "Mean depth": sample.get("mean_depth"),
+                "Coverage ≥1× (%)": (
+                    float(sample["coverage_1x"]) * 100
+                    if sample.get("coverage_1x") is not None
+                    else None
+                ),
+                "SNP": sample.get("snp", 0),
+                "Insertion": sample.get("insertion", 0),
+                "Deletion": sample.get("deletion", 0),
+            }
+        )
+    if summary_rows:
+        st.dataframe(
+            pd.DataFrame(summary_rows),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Mapping rate (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                "Coverage ≥1× (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                "Mean depth": st.column_config.NumberColumn(format="%.1f×"),
+            },
+        )
+    st.download_button(
+        "Download complete summary (CSV)",
+        data=str(result.get("summary_csv", "")).encode("utf-8-sig"),
+        file_name=f"{job.experiment_name}_ONT_summary.csv",
+        mime="text/csv",
+        type="primary",
+    )
+    st.caption(f"Complete BAM, VCF, consensus FASTA, and reports: `{result.get('result_root', '')}`")
+
+    groups = result.get("groups", {})
+    assert isinstance(groups, dict)
+    st.markdown("#### Reference-by-reference review")
+    for reference_name, group_samples in groups.items():
+        assert isinstance(group_samples, list)
+        labels = ", ".join(
+            f"{sample.get('barcode')}: {sample.get('status')}" for sample in group_samples
+        )
+        with st.expander(f"{reference_name}  ·  {labels}"):
+            columns = st.columns(max(1, len(group_samples)))
+            for column, sample in zip(columns, group_samples):
+                with column:
+                    st.markdown(_result_status_html(str(sample.get("status"))), unsafe_allow_html=True)
+                    st.write(f"**{sample.get('barcode')} · Replicate {sample.get('replicate')}**")
+                    if sample.get("status") == "ERROR":
+                        st.error(str(sample.get("message", "Analysis failed.")))
+                        continue
+                    mapping_rate = sample.get("mapping_rate")
+                    st.metric("Mapping", f"{float(mapping_rate):.1%}" if mapping_rate is not None else "N/A")
+                    st.metric("Mean depth", f"{float(sample.get('mean_depth', 0)):.1f}×")
+                    st.write(
+                        f"SNP **{sample.get('snp', 0)}** · INS **{sample.get('insertion', 0)}** · "
+                        f"DEL **{sample.get('deletion', 0)}**"
+                    )
+                    details = sample.get("variant_details", [])
+                    if details:
+                        st.dataframe(pd.DataFrame(details), hide_index=True, use_container_width=True)
+
+
+def _batch_ont_tab() -> None:
+    st.subheader("32-plasmid / 96-barcode batch analysis")
+    st.write(
+        "Upload reference sequences and the completed ONT barcode directory. Barcodes are sorted "
+        "numerically and assigned three at a time; review or edit the mapping before running."
+    )
+    st.info(
+        "Recommended workflow: select the run folder that contains barcode13, barcode14, … folders. "
+        "The folder hierarchy is used to identify each barcode automatically."
+    )
+
+    upload_columns = st.columns(2)
+    with upload_columns[0]:
+        st.markdown("#### 1 · Reference sequences")
+        reference_uploads = st.file_uploader(
+            "Drag up to 32 reference files",
+            type=["fasta", "fa", "fna", "txt"],
+            accept_multiple_files=True,
+            key="batch_references",
+            help="The file name becomes the plasmid/reference name in the final report.",
+        )
+    with upload_columns[1]:
+        st.markdown("#### 2 · ONT barcode directory")
+        read_uploads = st.file_uploader(
+            "Select or drag the directory containing barcode folders",
+            type=["fastq", "fq", "gz"],
+            accept_multiple_files="directory",
+            key="batch_reads",
+            help="Select a parent folder that contains barcode01, barcode02, ... subfolders.",
+        )
+
+    reference_uploads = list(reference_uploads or [])
+    read_uploads = list(read_uploads or [])
+    grouped_reads = uploaded_barcodes(read_uploads)
+    barcode_names = list(grouped_reads)
+    reference_signature = tuple((item.name, item.size) for item in reference_uploads)
+    read_signature = tuple((item.name, item.size) for item in read_uploads)
+    batch_signature = (reference_signature, read_signature)
+
+    validation_errors: list[str] = []
+    reference_rows: list[dict[str, object]] = []
+    for item in reference_uploads:
+        try:
+            record = parse_uploaded_reference(item)
+            reference_rows.append(
+                {"Reference file": Path(item.name).name, "Length (bp)": len(record.sequence)}
+            )
+        except (BatchPreparationError, SequenceValidationError) as exc:
+            validation_errors.append(str(exc))
+
+    upload_metrics = st.columns(4)
+    upload_metrics[0].metric("References", len(reference_uploads))
+    upload_metrics[1].metric("Detected barcodes", len(barcode_names))
+    upload_metrics[2].metric("Expected samples", len(reference_uploads) * 3)
+    upload_metrics[3].metric("Uploaded FASTQ files", len(read_uploads))
+
+    if reference_rows:
+        with st.expander("Reference file check"):
+            st.dataframe(pd.DataFrame(reference_rows), hide_index=True, use_container_width=True)
+    for error in validation_errors:
+        st.error(error)
+    if read_uploads and not grouped_reads:
+        st.error(
+            "No barcode folder name was detected. Select the parent directory that contains "
+            "barcode01/barcode02/... folders rather than selecting FASTQ files individually."
+        )
+
+    if st.session_state.get("batch_signature") != batch_signature:
+        st.session_state["batch_signature"] = batch_signature
+        st.session_state["batch_mapping"] = _default_batch_mapping(reference_uploads, barcode_names)
+
+    if reference_uploads and barcode_names:
+        st.markdown("#### 3 · Review reference ↔ barcode mapping")
+        st.caption(
+            "References are shown in upload order and barcodes are assigned numerically in groups of three. "
+            "Change Order or any barcode cell if the experimental order is different."
+        )
+        mapping_frame = st.session_state.get("batch_mapping")
+        if not isinstance(mapping_frame, pd.DataFrame):
+            mapping_frame = _default_batch_mapping(reference_uploads, barcode_names)
+        edited = st.data_editor(
+            mapping_frame,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            key="batch_mapping_editor",
+            column_config={
+                "Order": st.column_config.NumberColumn(min_value=1, step=1, required=True),
+                "Reference": st.column_config.TextColumn(disabled=True),
+                "Barcode 1": st.column_config.SelectboxColumn(options=barcode_names, required=True),
+                "Barcode 2": st.column_config.SelectboxColumn(options=barcode_names, required=True),
+                "Barcode 3": st.column_config.SelectboxColumn(options=barcode_names, required=True),
+            },
+        )
+        st.session_state["batch_mapping"] = edited
+
+        sorted_mapping = edited.sort_values("Order", kind="stable")
+        assigned = [
+            str(value)
+            for column in ("Barcode 1", "Barcode 2", "Barcode 3")
+            for value in sorted_mapping[column].tolist()
+            if str(value) not in {"", "nan", "None"}
+        ]
+        invalid_assignments = sorted(
+            {value for value in assigned if value not in barcode_names}, key=natural_key
+        )
+        duplicates = sorted({value for value in assigned if assigned.count(value) > 1}, key=natural_key)
+        missing = sorted(set(barcode_names) - set(assigned), key=natural_key)
+        expected_assignment_count = len(reference_uploads) * 3
+        if invalid_assignments or len(assigned) != expected_assignment_count:
+            st.error(
+                f"Every reference needs three valid barcodes ({expected_assignment_count} total assignments)."
+            )
+        if duplicates:
+            st.error("Duplicate assignments: " + ", ".join(duplicates))
+        if missing:
+            st.warning("Uploaded but not assigned: " + ", ".join(missing))
+        if len(barcode_names) != len(reference_uploads) * 3:
+            st.warning(
+                f"The usual 3-per-reference layout expects {len(reference_uploads) * 3} barcodes, "
+                f"but {len(barcode_names)} were detected. You can still edit and run the mapping."
+            )
+
+        st.markdown("#### 4 · Analysis settings")
+        settings_columns = st.columns(5)
+        experiment_name = settings_columns[0].text_input("Experiment", value="ONT_plasmid_batch")
+        threads = settings_columns[1].number_input("Threads/sample", 1, 64, 8)
+        parallel_jobs = settings_columns[2].number_input("Parallel samples", 1, 64, 16)
+        min_length = settings_columns[3].number_input("Minimum read length", 0, value=500, step=50)
+        min_quality = settings_columns[4].number_input("Minimum mean Q", 0, value=10, step=1)
+
+        can_run = (
+            not validation_errors
+            and not duplicates
+            and not invalid_assignments
+            and len(assigned) == expected_assignment_count
+        )
+        if st.button(
+            f"Run batch analysis ({len(assigned)} samples)",
+            type="primary",
+            disabled=not can_run,
+            key="batch_run",
+            use_container_width=True,
+        ):
+            try:
+                mappings = []
+                for _, row in sorted_mapping.iterrows():
+                    mappings.append(
+                        {
+                            "reference": str(row["Reference"]),
+                            "barcodes": [
+                                str(row["Barcode 1"]),
+                                str(row["Barcode 2"]),
+                                str(row["Barcode 3"]),
+                            ],
+                        }
+                    )
+                missing_tools = [
+                    executable
+                    for executable in ("bash", "minimap2", "samtools", "bcftools")
+                    if not shutil.which(executable)
+                ]
+                if missing_tools:
+                    raise BatchPreparationError(
+                        "Missing analysis tool(s): " + ", ".join(missing_tools)
+                    )
+                settings = BatchSettings(
+                    experiment_name=experiment_name,
+                    threads=int(threads),
+                    parallel_jobs=int(parallel_jobs),
+                    min_read_length=int(min_length),
+                    min_read_quality=int(min_quality),
+                )
+                with st.spinner("Staging uploaded references and FASTQ files on the server…"):
+                    job = prepare_batch_job(
+                        UI_RUN_ROOT,
+                        reference_uploads,
+                        read_uploads,
+                        mappings,
+                        settings,
+                    )
+                log_box = st.empty()
+                progress_box = st.empty()
+                log_lines: list[str] = []
+                completed = 0
+
+                def show_line(line: str) -> None:
+                    nonlocal completed
+                    log_lines.append(line)
+                    log_box.code("\n".join(log_lines[-60:]), language="text")
+                    if " Done: " in line:
+                        completed += 1
+                    progress_box.progress(
+                        min(1.0, completed / max(1, job.sample_count)),
+                        text=f"Completed {completed} / {job.sample_count} samples",
+                    )
+
+                with st.spinner("Batch analysis is running. Keep this browser tab open…"):
+                    run_batch_job(REPOSITORY_ROOT, job, on_line=show_line)
+                    result = collect_batch_results(job)
+                progress_box.success(f"Completed {job.sample_count} samples.")
+                st.session_state["batch_result"] = {"job": job, "result": result}
+            except (
+                BatchPreparationError,
+                BatchExecutionError,
+                SequenceValidationError,
+                OSError,
+            ) as exc:
+                st.error(str(exc))
+
+    batch_state = st.session_state.get("batch_result")
+    if batch_state:
+        _render_batch_results(batch_state["result"], batch_state["job"])
+
+
 def _raw_ont_tab() -> None:
     st.subheader("Raw Oxford Nanopore read analysis")
     st.write(
@@ -449,8 +897,10 @@ def _raw_ont_tab() -> None:
 
 def _sidebar() -> None:
     with st.sidebar:
-        st.header("Environment")
-        st.caption("All analysis runs locally. Sequence/read data is not sent outside this server.")
+        st.markdown("### ONT Plasmid Analyzer")
+        st.caption("Internal batch analysis · Local server only")
+        st.info("Sequence and read data remain inside this Linux server.")
+        st.markdown("**Analysis environment**")
         for executable in ("minimap2", "samtools", "bcftools", "NanoFilt"):
             if shutil.which(executable):
                 st.success(f"{executable}: ready")
@@ -462,14 +912,17 @@ def _sidebar() -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="ONT Variant Explorer",
+        page_title="ONT Plasmid Analyzer",
         page_icon="🧬",
         layout="wide",
     )
-    st.title("ONT Variant Explorer")
-    st.caption("Offline plasmid/vector sequence comparison and Oxford Nanopore variant analysis")
+    _brand_header()
     _sidebar()
-    quick_tab, raw_tab = st.tabs(["Quick FASTA comparison", "Raw ONT analysis"])
+    batch_tab, quick_tab, raw_tab = st.tabs(
+        ["Batch plasmid analysis", "Quick sequence comparison", "Single-sample ONT analysis"]
+    )
+    with batch_tab:
+        _batch_ont_tab()
     with quick_tab:
         _quick_compare_tab()
     with raw_tab:
