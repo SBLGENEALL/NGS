@@ -70,32 +70,32 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 2. 필요한 reference FASTA를 첫 번째 업로드 영역에 모두 드래그합니다.
 3. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
    `Reference file check`에서 정렬된 파일명과 길이를 확인합니다.
-4. Reference 파일명별로 생성된 영역에 해당 barcode FASTQ를 올립니다. 실제 결과가
-   barcode별 폴더 구조라면 `Barcode folders`를 선택한 뒤 상위 폴더를 선택합니다.
-5. `분석 전 최종 확인`에서 reference별 barcode와 FASTQ 개수를 확인합니다.
-6. 왼쪽의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 `Batch settings`에서
+4. Reference 파일명별로 생성된 영역에 해당 FASTQ 파일 또는 sample 폴더를 그대로
+   드래그합니다. 별도의 입력 형식 선택은 필요하지 않습니다.
+5. 필요하면 `Sample ID 확인/수정`을 열어 자동 인식된 ONT sample name을 수정합니다.
+   여러 FASTQ chunk에 같은 Sample ID를 입력하면 하나의 sample로 합쳐 분석합니다.
+6. `분석 전 최종 확인`에서 reference별 Sample ID와 FASTQ 개수를 확인합니다.
+7. 왼쪽의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 `Batch settings`에서
    CPU, 병렬 sample 수, read filter 및 variant review 기준을 저장할 수 있습니다.
-7. 중복·누락 경고가 없는지 확인한 뒤 `Batch analysis 실행`을 누릅니다.
+8. 중복·누락 경고가 없는지 확인한 뒤 `Batch analysis 실행`을 누릅니다.
 
 각 입력 항목의 `?`에 커서를 올리면 설정 의미와 권장 사용법을 확인할 수 있습니다.
 
 결과는 reference별로 연결된 sample이 묶여 표시되며 `CLEAN`,
 `VARIANT DETECTED`, `REVIEW`, `ERROR` 상태를 제공합니다. 전체 결과 요약은 CSV로
 내려받을 수 있고 BAM, VCF, consensus FASTA 및 보고서는 서버 결과 폴더에 남습니다.
+실행 command와 상세 출력은 기본적으로 접힌 `Analysis log`에서 필요할 때만 확인합니다.
 
 ### 내장 예제 데이터
 
 Batch 화면의 `예제 데이터로 테스트하기`를 열어 ZIP을 받습니다.
-압축을 푼 뒤 `references`의 FASTA 5개를 올립니다. 기본값인 `FASTQ files`를
-선택한 상태에서 각 reference 입력창에 `demo_reads/<같은 reference 이름>/`의
-barcode FASTQ 3개를 올립니다. 예제는 reference마다 exact/SNP/insertion sample을
+압축을 푼 뒤 `references`의 FASTA 5개를 올립니다. 각 reference 입력창에
+`demo_reads/<같은 reference 이름>/`의 FASTQ 파일 또는 폴더를 그대로 올립니다.
+예제는 reference마다 exact/SNP/insertion sample을
 하나씩 포함하며 `expected_mapping.csv`에서 예상 연결과 변이를 확인할 수 있습니다.
 
-실제 ONT 결과가 barcode별 폴더와 여러 FASTQ chunk로 구성되어 있다면
-`Barcode folders`로 변경하고 해당 reference의 barcode 폴더를 선택합니다.
-단, 브라우저가 폴더 경로를 제거하고 모든 파일을 `reads.fastq`로만 전달하는 경우에는
-barcode를 구분할 수 없습니다. 이 경우 파일명에 barcode 번호가 포함되도록 준비한 뒤
-`FASTQ files` 방식으로 올립니다.
+Sample ID는 `barcode13` 같은 번호, ONT sample alias 폴더명 또는 FASTQ 파일명에서
+자동으로 가져옵니다. 따라서 barcode라는 이름을 반드시 사용할 필요가 없습니다.
 
 > 디렉터리 업로드를 위해 Streamlit 1.57 이상이 필요합니다. FASTQ는 브라우저를
 > 통해 서버로 전송되므로 분석 중 브라우저 탭을 닫지 마세요.
@@ -104,6 +104,11 @@ barcode를 구분할 수 없습니다. 이 경우 파일명에 barcode 번호가
 
 왼쪽 `분석 메뉴`에서 **Quick sequence comparison**을 선택한 뒤 reference와
 query/consensus를 각각 FASTA 업로드 또는 서열 붙여넣기로 입력합니다.
+
+- **Reference**: 원래 설계한 plasmid/vector의 기준 FASTA입니다.
+- **Query**: ONT 분석 후 얻은 consensus FASTA, assembly 결과 또는 확인하려는 완성
+  plasmid 서열입니다. Raw FASTQ는 Query에 넣지 않습니다.
+- Raw ONT read부터 분석하려면 **Batch analysis**를 사용합니다.
 
 - 방향과 reverse complement를 자동 판별합니다.
 - `Circular plasmid/vector`를 켜면 FASTA 시작/끝 이음매를 통과하는 정렬을 허용합니다.
@@ -117,7 +122,7 @@ fraction은 제공하지 않습니다. 해당 신뢰도 지표가 필요하면 R
 ## 5. 모드 선택 기준
 
 - **Batch analysis**: raw ONT FASTQ를 분석할 때 사용합니다. Reference 하나와 해당
-  barcode folder 하나만 올리면 single-sample 분석도 같은 화면에서 실행할 수 있습니다.
+  sample folder 하나만 올리면 single-sample 분석도 같은 화면에서 실행할 수 있습니다.
 - **Quick sequence comparison**: 이미 완성된 query/consensus FASTA가 있고
   reference와 sequence 차이만 빠르게 확인할 때 사용합니다. Read depth, QUAL,
   allele fraction은 계산하지 않습니다.
