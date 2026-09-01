@@ -17,20 +17,20 @@ conda activate NGS_env
 
 브라우저에서 `http://<Linux-server-IP>:8501`을 열면 왼쪽 `분석 메뉴`에서
 다음 두 모드를 선택할 수 있습니다. `Analysis settings` 버튼을 누르면 선택한
-분석의 설정이 중앙 작업공간에 표시되며, 각 `?` 도움말에 커서를 올리면 설명을
+분석들의 설정이 중앙 작업공간에 표시되며, 각 `?` 도움말에 커서를 올리면 설명을
 확인할 수 있습니다. 앱은 일관된 light theme와 브랜드 그라데이션 sidebar를 사용합니다.
 
-1. **Batch analysis**: 이번 run의 전체 barcode sample 수를 1–96개 중
-   선택하고 필요한 reference와 ONT barcode 폴더를 업로드합니다. 각 barcode를
-   원하는 reference에 독립적으로 연결하므로 reference별 sample 수는 자유롭습니다.
+1. **Batch analysis**: 필요한 reference를 먼저 업로드하면 reference 파일명별
+   barcode upload 영역이 자동 생성됩니다. 각 영역에 해당 barcode 폴더를 넣으므로
+   별도의 sample 수 입력이나 매칭표 작성이 필요하지 않습니다.
    화면에서 바로 받을 수 있는 5-reference/15-sample synthetic demo도 제공합니다.
 2. **Quick sequence comparison**: reference와 query/consensus 서열을 붙여넣거나
    업로드하여 SNP(point mutation), insertion, deletion을 즉시 비교합니다.
    reverse complement와 circular plasmid 이음매를 자동으로 처리합니다.
 
 기존 **Single-sample ONT analysis** 기능은 코드에 보존하지만 일반 메뉴에서는
-숨깁니다. Batch analysis를 sample 수 1개로 설정하면 동일한 일상 분석을 더 단순한
-화면에서 수행할 수 있기 때문입니다.
+숨깁니다. Batch analysis에 reference 하나와 barcode folder 하나를 올리면 동일한
+일상 분석을 더 단순한 화면에서 수행할 수 있기 때문입니다.
 
 대용량 FASTQ는 브라우저로 업로드하지 않고 서버 경로를 선택하는 방식을
 권장합니다. 기본 read QC는 `500 bp / Q10`이며 coverage가 부족할 때만
