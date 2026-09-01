@@ -1057,7 +1057,7 @@ def _settings_page(mode: str) -> None:
                 updated["parallel_jobs"] = st.number_input(
                     "Parallel samples",
                     min_value=1,
-                    max_value=96,
+                    max_value=64,
                     value=int(current["parallel_jobs"]),
                     help="Maximum number of barcode samples processed at the same time.",
                 )
