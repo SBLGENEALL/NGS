@@ -8,6 +8,7 @@ from ont_ui.batch import (
     BatchPreparationError,
     BatchSettings,
     barcode_from_upload_name,
+    natural_key,
     prepare_batch_job,
     uploaded_barcodes,
 )
@@ -24,6 +25,13 @@ class Upload(io.BytesIO):
 
 
 class BatchTests(unittest.TestCase):
+    def test_reference_names_use_natural_order(self):
+        names = ["demo_plasmid_10.fasta", "demo_plasmid_02.fasta", "demo_plasmid_01.fasta"]
+        self.assertEqual(
+            sorted(names, key=natural_key),
+            ["demo_plasmid_01.fasta", "demo_plasmid_02.fasta", "demo_plasmid_10.fasta"],
+        )
+
     def test_barcode_detection_from_directory_upload(self):
         self.assertEqual(
             barcode_from_upload_name("run/barcode013/fastq_pass/reads.fastq.gz"),
