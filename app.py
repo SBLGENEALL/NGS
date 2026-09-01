@@ -55,6 +55,11 @@ DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
         "parallel_jobs": 16,
         "min_length": 500,
         "min_quality": 10,
+        "min_variant_quality": 20.0,
+        "min_variant_depth": 10,
+        "min_af": 0.80,
+        "circular": True,
+        "edge_margin": 50,
     },
     "Quick sequence comparison": {"circular": True},
     "Single-sample ONT analysis": {
@@ -477,27 +482,6 @@ def _quick_compare_tab(settings: dict[str, object]) -> None:
         _render_quick_result(quick_state["result"], quick_state["reference"])
 
 
-def _default_batch_mapping(reference_files, barcode_names: list[str]) -> pd.DataFrame:
-    reference_names = [Path(uploaded.name).name for uploaded in reference_files]
-    rows: list[dict[str, object]] = []
-    for index, barcode in enumerate(barcode_names):
-        reference = ""
-        if reference_names:
-            reference_index = min(
-                (index * len(reference_names)) // max(1, len(barcode_names)),
-                len(reference_names) - 1,
-            )
-            reference = reference_names[reference_index]
-        rows.append(
-            {
-                "Order": index + 1,
-                "Barcode": barcode,
-                "Reference": reference,
-            }
-        )
-    return pd.DataFrame(rows)
-
-
 def _result_status_html(status: str) -> str:
     css = {
         "CLEAN": "status-clean",
@@ -618,21 +602,15 @@ def _render_batch_results(result: dict[str, object], job) -> None:
 
 
 def _batch_ont_tab(settings: dict[str, object]) -> None:
-    expected_sample_count = int(settings["sample_count"])
-    st.subheader(f"Batch analysis · {expected_sample_count} samples")
+    st.subheader("Batch analysis")
     st.write(
-        "Reference와 ONT barcode sample을 업로드한 뒤, 각 sample에 사용할 "
-        "reference를 지정합니다."
-    )
-    st.info(
-        "`barcode01`, `barcode02` 폴더가 들어 있는 상위 폴더를 선택하세요. "
-        "Reference 매칭은 아래 표에서 변경할 수 있습니다."
+        "Reference를 먼저 올리면 파일명별 barcode upload 영역이 자동으로 생성됩니다."
     )
 
     with st.expander("예제 데이터로 테스트하기 · 5 references / 15 samples"):
         st.write(
-            "ZIP을 내려받아 압축을 풉니다. **Sample 수를 15로 설정**하고, "
-            "`references`의 FASTA 5개와 `demo_reads` 폴더를 업로드하세요."
+            "ZIP을 내려받아 압축을 풉니다. `references`의 FASTA 5개를 먼저 올린 뒤, "
+            "각 reference 영역에서 같은 이름의 `demo_reads` 하위 폴더를 선택하세요."
         )
         st.download_button(
             "예제 데이터 다운로드 (ZIP)",
@@ -643,37 +621,16 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             help="Software 테스트용 synthetic data이며 biological control로 사용할 수 없습니다.",
         )
 
-    upload_columns = st.columns(2)
-    with upload_columns[0]:
-        st.markdown("#### 1 · Reference")
-        reference_uploads = st.file_uploader(
-            "이번 run에 사용할 reference 파일을 모두 올리세요",
-            type=["fasta", "fa", "fna", "txt"],
-            accept_multiple_files=True,
-            key="batch_references",
-            help=(
-                "한 개 이상의 reference를 올릴 수 있습니다. Reference 수와 barcode "
-                "sample 수는 같지 않아도 됩니다."
-            ),
-        )
-    with upload_columns[1]:
-        st.markdown("#### 2 · ONT barcode sample")
-        read_uploads = st.file_uploader(
-            "Barcode 폴더가 들어 있는 상위 폴더를 선택하세요",
-            type=["fastq", "fq", "gz"],
-            accept_multiple_files="directory",
-            key="batch_reads",
-            help="barcode01, barcode02 등의 하위 폴더가 들어 있는 상위 폴더를 선택합니다.",
-        )
-
+    st.markdown("#### 1 · Reference")
+    reference_uploads = st.file_uploader(
+        "이번 run에 사용할 reference 파일을 모두 올리세요",
+        type=["fasta", "fa", "fna", "txt"],
+        accept_multiple_files=True,
+        key="batch_references",
+        help="업로드한 reference 개수와 파일명에 따라 barcode upload 영역이 생성됩니다.",
+    )
     reference_uploads = list(reference_uploads or [])
-    read_uploads = list(read_uploads or [])
-    grouped_reads = uploaded_barcodes(read_uploads)
-    barcode_names = list(grouped_reads)
     reference_names = [Path(item.name).name for item in reference_uploads]
-    reference_signature = tuple((item.name, item.size) for item in reference_uploads)
-    read_signature = tuple((item.name, item.size) for item in read_uploads)
-    batch_signature = (reference_signature, read_signature)
 
     validation_errors: list[str] = []
     reference_rows: list[dict[str, object]] = []
@@ -688,194 +645,188 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         except (BatchPreparationError, SequenceValidationError) as exc:
             validation_errors.append(str(exc))
 
-    upload_metrics = st.columns(4)
-    upload_metrics[0].metric("Reference", len(reference_uploads))
-    upload_metrics[1].metric(
-        "감지된 samples", f"{len(barcode_names)} / {expected_sample_count}"
-    )
-    upload_metrics[2].metric("예정 samples", expected_sample_count)
-    upload_metrics[3].metric("FASTQ files", len(read_uploads))
-
-    if barcode_names and len(barcode_names) != expected_sample_count:
-        st.warning(
-            f"설정한 sample은 {expected_sample_count}개이지만 barcode 폴더는 "
-            f"{len(barcode_names)}개 감지되었습니다."
-        )
-    if reference_rows:
-        with st.expander("Reference file check"):
+    if reference_uploads:
+        with st.expander("Reference file check", expanded=True):
             st.dataframe(pd.DataFrame(reference_rows), hide_index=True, use_container_width=True)
     for error in validation_errors:
         st.error(error)
-    if read_uploads and not grouped_reads:
-        st.error(
-            "No barcode folder name was detected. Select the parent directory containing "
-            "barcode01/barcode02/... folders rather than individual FASTQ files."
-        )
 
-    if st.session_state.get("batch_signature") != batch_signature:
-        st.session_state["batch_signature"] = batch_signature
-        st.session_state["batch_mapping"] = _default_batch_mapping(
-            reference_uploads, barcode_names
-        )
-        st.session_state.pop("batch_mapping_editor", None)
+    all_reads: list[object] = []
+    mappings: list[dict[str, object]] = []
+    assignment_rows: list[dict[str, object]] = []
+    invalid_read_names: list[str] = []
+    barcode_owner: dict[str, str] = {}
+    duplicate_barcodes: list[str] = []
 
-    if reference_uploads and barcode_names:
-        st.markdown("#### 3 · Sample–reference 매칭")
+    if reference_uploads:
+        st.markdown("#### 2 · Reference별 ONT barcode sample")
         st.caption(
-            "한 행이 하나의 barcode sample입니다. 각 sample에 맞는 reference를 선택하세요."
+            "각 영역에서 해당 reference에 사용할 barcode 폴더들이 들어 있는 상위 폴더를 선택하세요."
         )
-        mapping_frame = st.session_state.get("batch_mapping")
-        if not isinstance(mapping_frame, pd.DataFrame):
-            mapping_frame = _default_batch_mapping(reference_uploads, barcode_names)
-        edited = st.data_editor(
-            mapping_frame,
+
+    for index, reference_file in enumerate(reference_names, 1):
+        reference_label = Path(reference_file).stem
+        with st.expander(f"{index} · {reference_label}", expanded=True):
+            uploaded = st.file_uploader(
+                f"{reference_label}의 barcode folder",
+                type=["fastq", "fq", "gz"],
+                accept_multiple_files="directory",
+                key=f"batch_reads_{index}_{sanitize_name(reference_label)}",
+                help=(
+                    "하나의 barcode 폴더 또는 여러 barcode 폴더가 들어 있는 상위 폴더를 "
+                    "선택합니다. 폴더명에 barcode01과 같은 번호가 있어야 합니다."
+                ),
+            )
+            uploaded_files = list(uploaded or [])
+            grouped = uploaded_barcodes(uploaded_files)
+            recognized_files = {
+                id(item)
+                for barcode_files in grouped.values()
+                for item in barcode_files
+            }
+            unrecognized = [
+                str(getattr(item, "name", "FASTQ"))
+                for item in uploaded_files
+                if id(item) not in recognized_files
+            ]
+            invalid_read_names.extend(unrecognized)
+
+            if grouped:
+                barcode_list = list(grouped)
+                st.success(
+                    f"{len(barcode_list)} samples 감지: " + ", ".join(barcode_list)
+                )
+                mappings.append(
+                    {"reference": reference_file, "barcodes": barcode_list}
+                )
+                all_reads.extend(uploaded_files)
+                assignment_rows.append(
+                    {
+                        "Reference": reference_file,
+                        "Samples": len(barcode_list),
+                        "Barcode": ", ".join(barcode_list),
+                        "FASTQ files": len(uploaded_files),
+                    }
+                )
+                for barcode in barcode_list:
+                    previous = barcode_owner.get(barcode)
+                    if previous is not None:
+                        duplicate_barcodes.append(barcode)
+                    else:
+                        barcode_owner[barcode] = reference_file
+            elif uploaded_files:
+                st.error(
+                    "Barcode 번호를 찾지 못했습니다. barcode01 같은 폴더가 포함된 "
+                    "상위 폴더를 선택하세요."
+                )
+            else:
+                st.caption("아직 barcode sample을 올리지 않았습니다.")
+
+    if invalid_read_names:
+        st.error(
+            "Barcode 경로를 확인할 수 없는 FASTQ가 있습니다: "
+            + ", ".join(invalid_read_names[:5])
+        )
+    duplicate_barcodes = sorted(set(duplicate_barcodes), key=natural_key)
+    if duplicate_barcodes:
+        st.error(
+            "두 개 이상의 reference에 중복된 barcode가 있습니다: "
+            + ", ".join(duplicate_barcodes)
+        )
+
+    if assignment_rows:
+        st.markdown("#### 3 · 분석 전 최종 확인")
+        st.dataframe(
+            pd.DataFrame(assignment_rows),
             hide_index=True,
             use_container_width=True,
-            num_rows="fixed",
-            key="batch_mapping_editor",
-            column_config={
-                "Order": st.column_config.NumberColumn(
-                    min_value=1,
-                    step=1,
-                    required=True,
-                    help="분석 및 결과표에 표시할 sample 순서입니다.",
-                ),
-                "Barcode": st.column_config.TextColumn(
-                    disabled=True,
-                    help="업로드한 ONT 폴더에서 감지된 barcode입니다.",
-                ),
-                "Reference": st.column_config.SelectboxColumn(
-                    options=reference_names,
-                    required=True,
-                    help="이 barcode sample 분석에 사용할 reference를 선택합니다.",
-                ),
-            },
         )
-        st.session_state["batch_mapping"] = edited
 
-        sorted_mapping = edited.sort_values("Order", kind="stable")
-        assigned_barcodes = [
-            str(value)
-            for value in sorted_mapping["Barcode"].tolist()
-            if str(value) not in {"", "nan", "None"}
-        ]
-        assigned_references = [
-            str(value)
-            for value in sorted_mapping["Reference"].tolist()
-            if str(value) not in {"", "nan", "None"}
-        ]
-        invalid_barcodes = sorted(
-            {value for value in assigned_barcodes if value not in barcode_names},
-            key=natural_key,
-        )
-        invalid_references = sorted(
-            {value for value in assigned_references if value not in reference_names},
-            key=natural_key,
-        )
-        duplicates = sorted(
-            {
-                value
-                for value in assigned_barcodes
-                if assigned_barcodes.count(value) > 1
-            },
-            key=natural_key,
-        )
-        missing = sorted(set(barcode_names) - set(assigned_barcodes), key=natural_key)
-        unused_references = sorted(set(reference_names) - set(assigned_references), key=natural_key)
+    total_samples = sum(int(row["Samples"]) for row in assignment_rows)
+    metrics = st.columns(3)
+    metrics[0].metric("Reference", len(reference_uploads))
+    metrics[1].metric("감지된 samples", total_samples)
+    metrics[2].metric("FASTQ files", len(all_reads))
 
-        if len(assigned_references) != len(barcode_names):
-            st.error("모든 barcode sample에 reference를 지정하세요.")
-        if invalid_barcodes:
-            st.error("Invalid barcode assignments: " + ", ".join(invalid_barcodes))
-        if invalid_references:
-            st.error("Invalid reference assignments: " + ", ".join(invalid_references))
-        if duplicates:
-            st.error("Duplicate barcode rows: " + ", ".join(duplicates))
-        if missing:
-            st.error("Uploaded but not assigned: " + ", ".join(missing))
-        if unused_references:
-            st.warning("현재 사용되지 않은 reference: " + ", ".join(unused_references))
+    every_reference_has_reads = (
+        bool(reference_uploads) and len(mappings) == len(reference_uploads)
+    )
+    if reference_uploads and not every_reference_has_reads:
+        st.warning("모든 reference 영역에 한 개 이상의 barcode sample을 올리세요.")
 
-        can_run = (
-            not validation_errors
-            and not duplicates
-            and not invalid_barcodes
-            and not invalid_references
-            and not missing
-            and len(barcode_names) == expected_sample_count
-            and len(assigned_barcodes) == expected_sample_count
-            and len(assigned_references) == expected_sample_count
-        )
-        if st.button(
-            f"Batch analysis 실행 ({len(assigned_barcodes)} samples)",
-            type="primary",
-            disabled=not can_run,
-            key="batch_run",
-            use_container_width=True,
-            help="저장된 Analysis settings로 매칭된 sample을 분석합니다.",
-        ):
-            try:
-                grouped_mapping: dict[str, list[str]] = {}
-                for _, row in sorted_mapping.iterrows():
-                    grouped_mapping.setdefault(str(row["Reference"]), []).append(
-                        str(row["Barcode"])
-                    )
-                mappings = [
-                    {"reference": reference, "barcodes": barcodes}
-                    for reference, barcodes in grouped_mapping.items()
-                ]
-                missing_tools = [
-                    executable
-                    for executable in ("bash", "minimap2", "samtools", "bcftools")
-                    if not shutil.which(executable)
-                ]
-                if missing_tools:
-                    raise BatchPreparationError(
-                        "Missing analysis tool(s): " + ", ".join(missing_tools)
-                    )
-                batch_settings = BatchSettings(
-                    experiment_name=str(settings["experiment_name"]),
-                    threads=int(settings["threads"]),
-                    parallel_jobs=int(settings["parallel_jobs"]),
-                    min_read_length=int(settings["min_length"]),
-                    min_read_quality=int(settings["min_quality"]),
+    can_run = (
+        every_reference_has_reads
+        and not validation_errors
+        and not invalid_read_names
+        and not duplicate_barcodes
+        and total_samples > 0
+    )
+    if st.button(
+        f"Batch analysis 실행 ({total_samples} samples)",
+        type="primary",
+        disabled=not can_run,
+        key="batch_run",
+        use_container_width=True,
+        help="각 reference 영역에 연결된 barcode sample을 분석합니다.",
+    ):
+        try:
+            missing_tools = [
+                executable
+                for executable in ("bash", "minimap2", "samtools", "bcftools")
+                if not shutil.which(executable)
+            ]
+            if missing_tools:
+                raise BatchPreparationError(
+                    "필수 분석 프로그램이 없습니다: " + ", ".join(missing_tools)
                 )
-                with st.spinner("Staging uploaded references and FASTQ files on the server…"):
-                    job = prepare_batch_job(
-                        UI_RUN_ROOT,
-                        reference_uploads,
-                        read_uploads,
-                        mappings,
-                        batch_settings,
-                    )
-                log_box = st.empty()
-                progress_box = st.empty()
-                log_lines: list[str] = []
-                completed = 0
+            batch_settings = BatchSettings(
+                experiment_name=str(settings["experiment_name"]),
+                threads=int(settings["threads"]),
+                parallel_jobs=int(settings["parallel_jobs"]),
+                min_read_length=int(settings["min_length"]),
+                min_read_quality=int(settings["min_quality"]),
+                min_variant_quality=float(settings.get("min_variant_quality", 20.0)),
+                min_variant_depth=int(settings.get("min_variant_depth", 10)),
+                min_allele_fraction=float(settings.get("min_af", 0.80)),
+                circular=bool(settings.get("circular", True)),
+                edge_margin=int(settings.get("edge_margin", 50)),
+            )
+            with st.spinner("Reference와 FASTQ를 분석 폴더에 준비하고 있습니다…"):
+                job = prepare_batch_job(
+                    UI_RUN_ROOT,
+                    reference_uploads,
+                    all_reads,
+                    mappings,
+                    batch_settings,
+                )
+            log_box = st.empty()
+            progress_box = st.empty()
+            log_lines: list[str] = []
+            completed = 0
 
-                def show_line(line: str) -> None:
-                    nonlocal completed
-                    log_lines.append(line)
-                    log_box.code("\n".join(log_lines[-60:]), language="text")
-                    if " Done: " in line:
-                        completed += 1
-                    progress_box.progress(
-                        min(1.0, completed / max(1, job.sample_count)),
-                        text=f"Completed {completed} / {job.sample_count} samples",
-                    )
+            def show_line(line: str) -> None:
+                nonlocal completed
+                log_lines.append(line)
+                log_box.code("\n".join(log_lines[-60:]), language="text")
+                if " Done: " in line:
+                    completed += 1
+                progress_box.progress(
+                    min(1.0, completed / max(1, job.sample_count)),
+                    text=f"완료 {completed} / {job.sample_count} samples",
+                )
 
-                with st.spinner("Batch analysis is running. Keep this browser tab open…"):
-                    run_batch_job(REPOSITORY_ROOT, job, on_line=show_line)
-                    result = collect_batch_results(job)
-                progress_box.success(f"Completed {job.sample_count} samples.")
-                st.session_state["batch_result"] = {"job": job, "result": result}
-            except (
-                BatchPreparationError,
-                BatchExecutionError,
-                SequenceValidationError,
-                OSError,
-            ) as exc:
-                st.error(str(exc))
+            with st.spinner("Batch analysis를 실행하고 있습니다. 브라우저를 닫지 마세요…"):
+                run_batch_job(REPOSITORY_ROOT, job, on_line=show_line)
+                result = collect_batch_results(job)
+            progress_box.success(f"{job.sample_count} samples 분석을 완료했습니다.")
+            st.session_state["batch_result"] = {"job": job, "result": result}
+        except (
+            BatchPreparationError,
+            BatchExecutionError,
+            SequenceValidationError,
+            OSError,
+        ) as exc:
+            st.error(str(exc))
 
     batch_state = st.session_state.get("batch_result")
     if batch_state:
@@ -1031,15 +982,17 @@ def _raw_ont_tab(settings: dict[str, object]) -> None:
 
 
 def _settings_page(mode: str) -> None:
-    current = _analysis_settings(mode)
     st.subheader("Analysis settings")
-    st.caption(f"**{mode}** 설정입니다. 각 `?`에 커서를 올리면 설명을 볼 수 있습니다.")
+    st.caption("각 `?`에 커서를 올리면 설정 설명을 볼 수 있습니다.")
+    batch_tab, quick_tab = st.tabs(["Batch settings", "Quick comparison settings"])
 
-    with st.form(f"settings_form_{mode}"):
-        updated: dict[str, object] = {}
-        if mode == "Batch analysis":
-            first, second = st.columns(2)
-            with first:
+    with batch_tab:
+        current = _analysis_settings("Batch analysis")
+        with st.form("batch_settings_form"):
+            updated: dict[str, object] = {}
+            pipeline_col, threshold_col = st.columns(2)
+            with pipeline_col:
+                st.markdown("#### Pipeline")
                 updated["experiment_name"] = st.text_input(
                     "Experiment name",
                     value=str(current["experiment_name"]),
@@ -1059,7 +1012,6 @@ def _settings_page(mode: str) -> None:
                     value=int(current["parallel_jobs"]),
                     help="동시에 처리할 barcode sample의 최대 개수입니다.",
                 )
-            with second:
                 updated["min_length"] = st.number_input(
                     "Minimum read length",
                     min_value=0,
@@ -1072,105 +1024,62 @@ def _settings_page(mode: str) -> None:
                     min_value=0,
                     value=int(current["min_quality"]),
                     step=1,
-                    help="평균 Phred quality가 이 값보다 낮은 read를 제외합니다. 기본값은 Q10입니다.",
+                    help="평균 Phred quality가 이 값보다 낮은 read를 제외합니다.",
                 )
-        elif mode == "Quick sequence comparison":
-            updated["circular"] = st.checkbox(
-                "Circular plasmid/vector",
-                value=bool(current["circular"]),
-                help=(
-                    "Temporarily doubles the reference during alignment so variants spanning the "
-                    "plasmid origin can be detected, then restores the original coordinates."
-                ),
-            )
-        else:
-            filter_col, review_col = st.columns(2)
-            with filter_col:
-                st.markdown("#### Read filtering and caller")
-                updated["threads"] = st.number_input(
-                    "CPU threads",
-                    min_value=1,
-                    max_value=max(1, os.cpu_count() or 1),
-                    value=int(current["threads"]),
-                    help="CPU threads used for this single sample.",
-                )
-                updated["min_length"] = st.number_input(
-                    "Minimum read length",
-                    min_value=0,
-                    value=int(current["min_length"]),
-                    step=50,
-                    help="Reads shorter than this value are removed. Use 300 if coverage is low.",
-                )
-                updated["min_read_quality"] = st.number_input(
-                    "Minimum mean Q",
-                    min_value=0,
-                    value=int(current["min_read_quality"]),
-                    step=1,
-                    help="Reads below this mean Phred score are removed. Use Q8 if coverage is low.",
-                )
-                caller_options = ["bcftools", "medaka", "pilon"]
-                caller_value = str(current["caller"])
-                updated["caller"] = st.selectbox(
-                    "Variant caller",
-                    caller_options,
-                    index=caller_options.index(caller_value) if caller_value in caller_options else 0,
-                    help="bcftools is lightweight. Medaka and Pilon require separate installations.",
-                )
-                updated["pilon_jar"] = str(current.get("pilon_jar", ""))
-                updated["pilon_mem"] = str(current.get("pilon_mem", "16G"))
-                if updated["caller"] == "pilon":
-                    updated["pilon_jar"] = st.text_input(
-                        "Pilon JAR path",
-                        value=str(current.get("pilon_jar", "")),
-                        help="Full Linux path to the installed pilon.jar file.",
-                    )
-                    updated["pilon_mem"] = st.text_input(
-                        "Pilon Java memory",
-                        value=str(current.get("pilon_mem", "16G")),
-                        help="Maximum Java heap memory allocated to Pilon.",
-                    )
-            with review_col:
-                st.markdown("#### Variant review thresholds")
+            with threshold_col:
+                st.markdown("#### Variant review")
                 updated["min_variant_quality"] = st.number_input(
                     "Minimum QUAL",
                     min_value=0.0,
-                    value=float(current["min_variant_quality"]),
-                    help="Calls below this variant quality score are marked REVIEW.",
+                    value=float(current.get("min_variant_quality", 20.0)),
+                    help="이 QUAL보다 낮은 variant는 REVIEW로 표시합니다.",
                 )
                 updated["min_variant_depth"] = st.number_input(
                     "Minimum DP",
                     min_value=0,
-                    value=int(current["min_variant_depth"]),
-                    help="Calls supported by fewer reads than this depth are marked REVIEW.",
+                    value=int(current.get("min_variant_depth", 10)),
+                    help="이 read depth보다 낮은 variant는 REVIEW로 표시합니다.",
                 )
                 updated["min_af"] = st.number_input(
                     "Minimum allele fraction",
                     min_value=0.0,
                     max_value=1.0,
-                    value=float(current["min_af"]),
+                    value=float(current.get("min_af", 0.80)),
                     step=0.05,
-                    help="Minimum alternative-allele fraction required for PASS status.",
+                    help="ALT allele을 지지하는 read 비율의 PASS 기준입니다.",
                 )
                 updated["circular"] = st.checkbox(
-                    "Circular reference",
-                    value=bool(current["circular"]),
-                    help="Enable for plasmids so origin-spanning alignments are handled as circular.",
+                    "Circular plasmid/vector",
+                    value=bool(current.get("circular", True)),
+                    help="Plasmid origin을 가로지르는 alignment와 variant 좌표를 처리합니다.",
                 )
                 updated["edge_margin"] = st.number_input(
                     "Edge margin (bp)",
                     min_value=0,
-                    value=int(current["edge_margin"]),
-                    disabled=not bool(updated["circular"]),
-                    help="Calls this close to a linear reference edge are marked for review.",
+                    value=int(current.get("edge_margin", 50)),
+                    help="Linear reference일 때 양 끝에서 REVIEW 처리할 범위입니다.",
                 )
+            save_batch = st.form_submit_button("Batch settings 저장", type="primary")
+        if save_batch:
+            st.session_state["saved_analysis_settings"]["Batch analysis"] = updated
+            st.success("Batch settings를 저장했습니다.")
 
-        submitted = st.form_submit_button("설정 저장", type="primary")
-    if submitted:
-        all_settings = st.session_state["saved_analysis_settings"]
-        all_settings[mode] = updated
-        st.success("Analysis settings를 저장했습니다.")
+    with quick_tab:
+        current_quick = _analysis_settings("Quick sequence comparison")
+        with st.form("quick_settings_form"):
+            quick_circular = st.checkbox(
+                "Circular plasmid/vector",
+                value=bool(current_quick["circular"]),
+                help="Reference를 임시로 이어 붙여 plasmid origin을 통과하는 alignment를 허용합니다.",
+            )
+            save_quick = st.form_submit_button("Quick settings 저장", type="primary")
+        if save_quick:
+            st.session_state["saved_analysis_settings"]["Quick sequence comparison"] = {
+                "circular": quick_circular
+            }
+            st.success("Quick comparison settings를 저장했습니다.")
+
     st.button("← 분석 화면으로", on_click=_close_settings_page)
-
 
 def _sidebar() -> tuple[str, dict[str, object]]:
     branding = _load_branding()
@@ -1250,25 +1159,6 @@ def _sidebar() -> tuple[str, dict[str, object]]:
             ),
         )
 
-        sample_count = int(st.session_state.get("planned_sample_count", 1))
-        if mode == "Batch analysis":
-            st.markdown("#### 분석 구성")
-            sample_count = int(
-                st.number_input(
-                    "Sample 수",
-                    min_value=1,
-                    max_value=96,
-                    value=sample_count,
-                    step=1,
-                    help=(
-                        "이번 run에서 분석할 전체 barcode sample 수입니다. 각 sample의 "
-                        "reference는 매칭표에서 자유롭게 지정할 수 있습니다."
-                    ),
-                )
-            )
-            st.session_state["planned_sample_count"] = sample_count
-            st.caption(f"분석 예정: barcode sample {sample_count}개")
-
         st.button(
             "⚙ Analysis settings",
             use_container_width=True,
@@ -1284,10 +1174,7 @@ def _sidebar() -> tuple[str, dict[str, object]]:
             unsafe_allow_html=True,
         )
 
-    settings = dict(_analysis_settings(mode))
-    if mode == "Batch analysis":
-        settings["sample_count"] = sample_count
-    return mode, settings
+    return mode, dict(_analysis_settings(mode))
 
 def main() -> None:
     st.set_page_config(
