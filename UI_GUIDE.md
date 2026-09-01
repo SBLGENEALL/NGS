@@ -68,7 +68,8 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 1. 왼쪽 `분석 메뉴`에서 **Batch analysis**를 선택합니다.
 2. 필요한 reference FASTA를 첫 번째 업로드 영역에 모두 드래그합니다.
-3. `Reference file check`에서 파일명과 길이를 확인합니다.
+3. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
+   `Reference file check`에서 정렬된 파일명과 길이를 확인합니다.
 4. Reference 파일명별로 생성된 영역에 해당 barcode FASTQ를 올립니다. 실제 결과가
    barcode별 폴더 구조라면 `Barcode folders`를 선택한 뒤 상위 폴더를 선택합니다.
 5. `분석 전 최종 확인`에서 reference별 barcode와 FASTQ 개수를 확인합니다.
@@ -92,6 +93,9 @@ barcode FASTQ 3개를 올립니다. 예제는 reference마다 exact/SNP/insertio
 
 실제 ONT 결과가 barcode별 폴더와 여러 FASTQ chunk로 구성되어 있다면
 `Barcode folders`로 변경하고 해당 reference의 barcode 폴더를 선택합니다.
+단, 브라우저가 폴더 경로를 제거하고 모든 파일을 `reads.fastq`로만 전달하는 경우에는
+barcode를 구분할 수 없습니다. 이 경우 파일명에 barcode 번호가 포함되도록 준비한 뒤
+`FASTQ files` 방식으로 올립니다.
 
 > 디렉터리 업로드를 위해 Streamlit 1.57 이상이 필요합니다. FASTQ는 브라우저를
 > 통해 서버로 전송되므로 분석 중 브라우저 탭을 닫지 마세요.
