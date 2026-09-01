@@ -67,20 +67,28 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 ## 3. Batch plasmid analysis (권장)
 
 1. 왼쪽 `Analysis menu`에서 **Batch plasmid analysis**를 선택합니다.
-2. `Number of references`에서 이번에 분석할 plasmid 수(1–32개)를 지정합니다.
-3. 지정한 수만큼 reference FASTA를 첫 번째 업로드 영역에 드래그합니다.
+2. `Number of samples`에서 이번 run의 전체 barcode sample 수(1–96개)를 지정합니다.
+3. 필요한 reference FASTA를 개수 제한 없이 첫 번째 업로드 영역에 드래그합니다.
 4. `barcode13`, `barcode14` 같은 폴더들이 들어 있는 ONT run 상위 폴더를 두 번째
    업로드 영역에서 선택합니다.
-5. UI는 barcode 번호를 숫자순으로 정렬하고 reference당 3개씩 자동 배정합니다.
-6. 매핑 표의 `Order` 또는 `Barcode 1–3`을 수정해 실제 실험 순서와 맞춥니다.
-7. 왼쪽 `Analysis settings`에서 CPU, 병렬 sample 수, read filter를 확인합니다.
+5. UI는 barcode를 숫자순으로 정렬해 한 줄에 하나씩 표시합니다.
+6. 각 barcode 행의 `Reference`를 선택해 원하는 reference와 자유롭게 연결합니다.
+7. 왼쪽의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 설정 화면에서 CPU,
+   병렬 sample 수 및 read filter를 확인하고 저장합니다.
 8. 중복·누락 경고가 없는지 확인한 뒤 `Run batch analysis`를 누릅니다.
 
 각 입력 항목의 `?`에 커서를 올리면 설정 의미와 권장 사용법을 확인할 수 있습니다.
 
-결과는 reference별로 세 replicate가 한 묶음으로 표시되며 `CLEAN`,
+결과는 reference별로 연결된 sample이 묶여 표시되며 `CLEAN`,
 `VARIANT DETECTED`, `REVIEW`, `ERROR` 상태를 제공합니다. 전체 결과 요약은 CSV로
 내려받을 수 있고 BAM, VCF, consensus FASTA 및 보고서는 서버 결과 폴더에 남습니다.
+
+### 내장 예제 데이터
+
+Batch 화면의 `Try the included 5-reference / 15-sample demo`를 열어 ZIP을 받습니다.
+압축을 푼 뒤 sample 수를 15로 설정하고, `references`의 FASTA 5개와
+`demo_reads` 폴더를 각각 업로드합니다. 예제는 reference마다 exact/SNP/insertion
+sample을 하나씩 포함하며 `expected_mapping.csv`에서 예상 연결과 변이를 확인할 수 있습니다.
 
 > 디렉터리 업로드를 위해 Streamlit 1.57 이상이 필요합니다. FASTQ는 브라우저를
 > 통해 서버로 전송되므로 분석 중 브라우저 탭을 닫지 마세요.
@@ -102,7 +110,8 @@ fraction은 제공하지 않습니다. 해당 신뢰도 지표가 필요하면 R
 ## 5. Single-sample ONT analysis
 
 1. 왼쪽 `Analysis menu`에서 **Single-sample ONT analysis**를 선택합니다.
-2. 왼쪽 `Analysis settings`에서 read filter, caller 및 variant 기준을 설정합니다.
+2. 왼쪽 `Analysis settings` 버튼을 누르고 중앙 화면에서 read filter, caller 및
+   variant 기준을 설정한 뒤 저장합니다.
 3. Experiment 이름과 sample/vector 이름을 입력합니다.
 4. Reference FASTA를 올리거나 전체 서열을 붙여넣습니다.
 5. 대용량 데이터는 `Server folder or file path`를 선택하고
