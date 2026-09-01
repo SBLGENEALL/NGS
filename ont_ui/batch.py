@@ -280,7 +280,16 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
         depth_file = sample_dir / f"{sample_name}.depth.txt"
         vcf = sample_dir / f"{sample_name}.vcf.gz"
         if not flagstat.is_file() or not depth_file.is_file():
-            samples.append({**item, "status": "ERROR", "message": "Result files are missing."})
+            samples.append(
+                {
+                    **item,
+                    "status": "ERROR",
+                    "message": (
+                        "Mapping 결과가 생성되지 않았습니다. Pipeline log에서 해당 "
+                        "sample의 [SKIP] 또는 error 메시지를 확인하세요."
+                    ),
+                }
+            )
             continue
         mapping = parse_flagstat(flagstat)
         depth, _ = read_depth(depth_file)
