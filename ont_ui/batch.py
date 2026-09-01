@@ -37,6 +37,11 @@ class BatchSettings:
     parallel_jobs: int = 16
     min_read_length: int = 500
     min_read_quality: int = 10
+    min_variant_quality: float = 20.0
+    min_variant_depth: int = 10
+    min_allele_fraction: float = 0.80
+    circular: bool = True
+    edge_margin: int = 50
 
 
 @dataclass(frozen=True)
@@ -220,7 +225,17 @@ def prepare_batch_job(
     _write_config(config_path, provisional, settings)
     manifest_path.write_text(
         json.dumps(
-            {"experiment_name": experiment, "samples": manifest_samples},
+            {
+                "experiment_name": experiment,
+                "thresholds": {
+                    "min_quality": settings.min_variant_quality,
+                    "min_depth": settings.min_variant_depth,
+                    "min_af": settings.min_allele_fraction,
+                    "circular": settings.circular,
+                    "edge_margin": settings.edge_margin if settings.circular else 0,
+                },
+                "samples": manifest_samples,
+            },
             ensure_ascii=False,
             indent=2,
         ),
@@ -266,6 +281,7 @@ def run_batch_job(
 
 def collect_batch_results(job: BatchJob) -> dict[str, object]:
     manifest = json.loads(job.manifest_path.read_text(encoding="utf-8"))
+    thresholds = manifest.get("thresholds", {})
     result_roots = sorted(
         [path for path in (job.job_dir / "results").glob(f"{job.experiment_name}_*") if path.is_dir()],
         key=lambda path: path.stat().st_mtime,
@@ -300,11 +316,11 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
             parse_vcf_variants(
                 vcf,
                 reference_sequence=reference.sequence,
-                min_quality=20,
-                min_depth=10,
-                min_allele_fraction=0.8,
-                edge_margin=50,
-                circular=True,
+                min_quality=float(thresholds.get("min_quality", 20.0)),
+                min_depth=int(thresholds.get("min_depth", 10)),
+                min_allele_fraction=float(thresholds.get("min_af", 0.8)),
+                edge_margin=int(thresholds.get("edge_margin", 50)),
+                circular=bool(thresholds.get("circular", True)),
             )
             if vcf.is_file()
             else []
