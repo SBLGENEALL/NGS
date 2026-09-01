@@ -610,7 +610,8 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     with st.expander("예제 데이터로 테스트하기 · 5 references / 15 samples"):
         st.write(
             "ZIP을 내려받아 압축을 풉니다. `references`의 FASTA 5개를 먼저 올린 뒤, "
-            "각 reference 영역에서 같은 이름의 `demo_reads` 하위 폴더를 선택하세요."
+            "`Barcode 입력 형식`을 `FASTQ files`로 두고, 각 reference 영역에 "
+            "`demo_reads/<reference 이름>/`의 barcode FASTQ 3개를 올리세요."
         )
         st.download_button(
             "예제 데이터 다운로드 (ZIP)",
@@ -661,22 +662,42 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     if reference_uploads:
         st.markdown("#### 2 · Reference별 ONT barcode sample")
         st.caption(
-            "각 영역에서 해당 reference에 사용할 barcode 폴더들이 들어 있는 상위 폴더를 선택하세요."
+            "각 영역에 해당 reference의 barcode FASTQ 또는 barcode folder를 올리세요."
         )
+        barcode_input_mode = st.radio(
+            "Barcode 입력 형식",
+            ["FASTQ files", "Barcode folders"],
+            horizontal=True,
+            help=(
+                "파일명에 barcode01 같은 번호가 있으면 FASTQ files를 선택합니다. "
+                "Barcode 번호가 폴더명에만 있으면 Barcode folders를 선택합니다."
+            ),
+        )
+    else:
+        barcode_input_mode = "FASTQ files"
 
     for index, reference_file in enumerate(reference_names, 1):
         reference_label = Path(reference_file).stem
         with st.expander(f"{index} · {reference_label}", expanded=True):
-            uploaded = st.file_uploader(
-                f"{reference_label}의 barcode folder",
-                type=["fastq", "fq", "gz"],
-                accept_multiple_files="directory",
-                key=f"batch_reads_{index}_{sanitize_name(reference_label)}",
-                help=(
-                    "하나의 barcode 폴더 또는 여러 barcode 폴더가 들어 있는 상위 폴더를 "
-                    "선택합니다. 폴더명에 barcode01과 같은 번호가 있어야 합니다."
-                ),
-            )
+            if barcode_input_mode == "FASTQ files":
+                uploaded = st.file_uploader(
+                    f"{reference_label}의 barcode FASTQ",
+                    type=["fastq", "fq", "gz"],
+                    accept_multiple_files=True,
+                    key=f"batch_files_{index}_{sanitize_name(reference_label)}",
+                    help="파일명에 barcode01, barcode02 같은 번호가 있는 FASTQ를 올립니다.",
+                )
+            else:
+                uploaded = st.file_uploader(
+                    f"{reference_label}의 barcode folder",
+                    type=["fastq", "fq", "gz"],
+                    accept_multiple_files="directory",
+                    key=f"batch_folders_{index}_{sanitize_name(reference_label)}",
+                    help=(
+                        "Barcode 폴더들이 들어 있는 상위 폴더를 선택합니다. "
+                        "폴더명에 barcode01과 같은 번호가 있어야 합니다."
+                    ),
+                )
             uploaded_files = list(uploaded or [])
             grouped = uploaded_barcodes(uploaded_files)
             recognized_files = {
@@ -716,8 +737,8 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                         barcode_owner[barcode] = reference_file
             elif uploaded_files:
                 st.error(
-                    "Barcode 번호를 찾지 못했습니다. barcode01 같은 폴더가 포함된 "
-                    "상위 폴더를 선택하세요."
+                    "Barcode 번호를 찾지 못했습니다. 파일명 또는 폴더 경로에 "
+                    "barcode01 같은 번호가 있어야 합니다."
                 )
             else:
                 st.caption("아직 barcode sample을 올리지 않았습니다.")
