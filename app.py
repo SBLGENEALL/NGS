@@ -7,6 +7,7 @@ import shutil
 import base64
 import html
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -41,6 +42,9 @@ from ont_ui.sequences import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
+SERVER_DATA_ROOT = Path(
+    os.environ.get("ONT_SERVER_ROOT", "/data/user/MCET03")
+).expanduser().resolve()
 
 DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
     "Batch analysis": {
@@ -108,6 +112,146 @@ def _restore_server_uploads(state_key: str) -> list[ServerPathUpload]:
         except BatchPreparationError:
             continue
     return restored
+
+
+def _clear_batch_assignments() -> None:
+    for key in list(st.session_state):
+        if str(key).startswith("assignment_"):
+            st.session_state.pop(key, None)
+
+
+def _inside_server_root(path: Path) -> bool:
+    """Return True only for paths contained by the configured data root."""
+    try:
+        path.resolve().relative_to(SERVER_DATA_ROOT)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _select_browser_folder(state_key: str, folder: Path) -> None:
+    """Persist a validated browser folder and clear any previous selection."""
+    resolved = folder.resolve()
+    if resolved.is_dir() and _inside_server_root(resolved):
+        st.session_state[f"{state_key}_current"] = str(resolved)
+
+
+def _server_folder_browser(
+    title: str,
+    state_key: str,
+    file_suffixes: tuple[str, ...],
+) -> Path | None:
+    """Render a click-only server folder picker rooted at SERVER_DATA_ROOT."""
+    if not SERVER_DATA_ROOT.is_dir():
+        st.error("서버 data 폴더에 접근할 수 없습니다. 관리자에게 확인하세요.")
+        return None
+
+    current_raw = st.session_state.get(f"{state_key}_current", str(SERVER_DATA_ROOT))
+    current = Path(str(current_raw)).expanduser().resolve()
+    if not current.is_dir() or not _inside_server_root(current):
+        current = SERVER_DATA_ROOT
+        st.session_state[f"{state_key}_current"] = str(current)
+
+    selected_raw = st.session_state.get(f"{state_key}_selected")
+    selected = Path(str(selected_raw)).resolve() if selected_raw else None
+    if selected is not None and (not selected.is_dir() or not _inside_server_root(selected)):
+        selected = None
+        st.session_state.pop(f"{state_key}_selected", None)
+
+    with st.container(border=True):
+        st.markdown(f"**{title}**")
+        relative = current.relative_to(SERVER_DATA_ROOT)
+        shown_path = SERVER_DATA_ROOT if str(relative) == "." else SERVER_DATA_ROOT / relative
+        st.caption(f"현재 위치: {shown_path}")
+
+        navigation = st.columns([1, 1, 3])
+        with navigation[0]:
+            st.button(
+                "⬆ 상위",
+                key=f"{state_key}_up",
+                disabled=current == SERVER_DATA_ROOT,
+                on_click=_select_browser_folder,
+                args=(state_key, current.parent),
+                use_container_width=True,
+            )
+        with navigation[1]:
+            if st.button(
+                "⌂ 처음",
+                key=f"{state_key}_root",
+                disabled=current == SERVER_DATA_ROOT,
+                use_container_width=True,
+            ):
+                st.session_state[f"{state_key}_current"] = str(SERVER_DATA_ROOT)
+                st.rerun()
+
+        try:
+            child_folders = sorted(
+                (item for item in current.iterdir() if item.is_dir()),
+                key=lambda item: natural_key(item.name),
+            )
+            matching_files = sum(
+                1
+                for item in current.iterdir()
+                if item.is_file() and item.name.lower().endswith(file_suffixes)
+            )
+        except PermissionError:
+            st.error("이 폴더를 열 권한이 없습니다. 다른 폴더를 선택하세요.")
+            child_folders = []
+            matching_files = 0
+        except OSError:
+            st.error("폴더 목록을 읽을 수 없습니다.")
+            child_folders = []
+            matching_files = 0
+
+        if child_folders:
+            st.caption("폴더를 클릭해 이동하세요.")
+            folder_columns = st.columns(3)
+            for index, folder in enumerate(child_folders[:150]):
+                with folder_columns[index % 3]:
+                    st.button(
+                        f"📁 {folder.name}",
+                        key=f"{state_key}_dir_{index}_{folder.name}",
+                        on_click=_select_browser_folder,
+                        args=(state_key, folder),
+                        use_container_width=True,
+                    )
+            if len(child_folders) > 150:
+                st.warning("하위 폴더가 많아 이름순으로 150개만 표시합니다.")
+        else:
+            st.caption("표시할 하위 폴더가 없습니다.")
+
+        st.caption(
+            f"현재 폴더 바로 아래에서 지원 파일 {matching_files}개를 확인했습니다. "
+            "선택하면 하위 폴더까지 함께 검색합니다."
+        )
+        choose, clear = st.columns([3, 1])
+        with choose:
+            if st.button(
+                "✓ 이 폴더 사용",
+                key=f"{state_key}_choose",
+                type="primary",
+                use_container_width=True,
+            ):
+                st.session_state[f"{state_key}_selected"] = str(current)
+                st.session_state[f"{state_key}_reload"] = (
+                    int(st.session_state.get(f"{state_key}_reload", 0)) + 1
+                )
+                st.rerun()
+        with clear:
+            if st.button(
+                "선택 해제",
+                key=f"{state_key}_clear",
+                use_container_width=True,
+            ):
+                st.session_state.pop(f"{state_key}_selected", None)
+                st.session_state[f"{state_key}_reload"] = (
+                    int(st.session_state.get(f"{state_key}_reload", 0)) + 1
+                )
+                st.rerun()
+
+        if selected is not None:
+            st.success(f"선택됨: {selected.name or selected}")
+    return selected
 
 
 def _analysis_settings(mode: str) -> dict[str, object]:
@@ -386,7 +530,7 @@ def _render_raw_result(state: dict[str, object]) -> None:
     elif vcf_path.is_file():
         st.success("No variant was called against the reference.")
     else:
-        st.warning("No VCF was produced. Review the pipeline log and selected variant caller.")
+        st.warning("VCF가 생성되지 않았습니다. 입력 파일과 Analysis settings를 확인하세요.")
 
     csv_data = variants_csv(events).encode("utf-8-sig")
     download_cols = st.columns(4)
@@ -418,10 +562,7 @@ def _render_raw_result(state: dict[str, object]) -> None:
             f"report_{run.job_dir.name}",
         )
 
-    st.info(f"Complete result folder: `{sample_dir}`")
-    st.caption("BAM/BAM.BAI and depth files remain in this folder to avoid loading large files into the browser.")
-    with st.expander("Pipeline log"):
-        st.code(run.log_path.read_text(encoding="utf-8", errors="replace"), language="text")
+    st.caption("대용량 BAM과 depth 파일은 서버에 안전하게 보관됩니다.")
 
 
 def _result_status_html(status: str) -> str:
@@ -500,8 +641,6 @@ def _render_batch_results(result: dict[str, object], job) -> None:
         mime="text/csv",
         type="primary",
     )
-    st.caption(f"Complete BAM, VCF, consensus FASTA, and reports: `{result.get('result_root', '')}`")
-
     groups = result.get("groups", {})
     assert isinstance(groups, dict)
     show_details = st.checkbox(
@@ -535,7 +674,7 @@ def _render_batch_results(result: dict[str, object], job) -> None:
                             f"Sample {sample.get('replicate')}**"
                         )
                         if sample.get("status") == "ERROR":
-                            st.error(str(sample.get("message", "Analysis failed.")))
+                            st.error("분석 결과를 생성하지 못했습니다. 입력 파일과 설정을 확인하세요.")
                             continue
                         mapping_rate = sample.get("mapping_rate")
                         st.metric(
@@ -552,100 +691,44 @@ def _render_batch_results(result: dict[str, object], job) -> None:
                         details = sample.get("variant_details", [])
                         if details:
                             _display_table(pd.DataFrame(details))
-    log_path = job.job_dir / "pipeline.log"
-    if log_path.is_file():
-        with st.expander("Analysis log · 필요할 때만 열기", expanded=False):
-            st.caption(f"전체 log 파일: `{log_path}`")
-            show_log = st.checkbox(
-                "최근 300줄을 화면에 표시",
-                value=False,
-                key=f"show_batch_log_{job.job_dir.name}",
-            )
-            if show_log:
-                lines = log_path.read_text(
-                    encoding="utf-8", errors="replace"
-                ).splitlines()
-                st.code("\n".join(lines[-300:]), language="text")
 
 
 def _batch_ont_tab(settings: dict[str, object]) -> None:
     st.subheader("Batch analysis")
     st.write(
-        "Reference를 먼저 올리면 파일명별 ONT sample upload 영역이 자동으로 생성됩니다."
+        "서버에서 Reference 폴더와 ONT 결과 폴더를 고른 뒤 sample을 배정하세요."
     )
 
-    st.markdown("#### 1 · Reference")
-    st.caption(
-        "Windows Explorer 또는 MobaXterm SFTP의 Reference FASTA를 아래 영역으로 "
-        "그대로 드래그하세요."
+    st.markdown("#### 1 · Reference 폴더")
+    st.caption("FASTA 파일이 들어 있는 폴더로 이동한 뒤 `이 폴더 사용`을 누르세요.")
+    reference_folder = _server_folder_browser(
+        "Reference 폴더 탐색",
+        "reference_browser",
+        (".fasta", ".fa", ".fna", ".txt"),
     )
-    uploaded_references = st.file_uploader(
-        "이번 run에 사용할 Reference 파일을 모두 올리세요",
-        type=["fasta", "fa", "fna", "txt"],
-        accept_multiple_files=True,
-        key="batch_references",
-        help=(
-            "여러 FASTA를 한 번에 드래그할 수 있습니다. 업로드된 파일 개수와 "
-            "이름에 따라 ONT sample 영역이 자동으로 생성됩니다."
-        ),
+    reference_reload = (
+        str(reference_folder) if reference_folder else None,
+        st.session_state.get("reference_browser_reload", 0),
     )
-    server_reference_files: list[ServerPathUpload] = []
-    with st.expander("Linux server에 있는 Reference 불러오기", expanded=False):
-        st.caption(
-            "MobaXterm의 현재 경로를 복사해 붙여 넣으세요. FASTA 파일 한 개 또는 "
-            "여러 FASTA가 들어 있는 폴더를 지정할 수 있습니다."
-        )
-        reference_server_path = st.text_input(
-            "Reference file 또는 folder의 절대경로",
-            placeholder="/data/user/MCET03/04_ONT/references",
-            key="reference_server_path",
-            help="Linux에서 pwd로 확인한 절대경로를 입력합니다.",
-        )
-        load_columns = st.columns([3, 1])
-        with load_columns[0]:
-            load_server_references = st.button(
-                "서버 Reference 불러오기",
-                key="load_server_references",
-                use_container_width=True,
-            )
-        with load_columns[1]:
-            clear_server_references = st.button(
-                "초기화",
-                key="clear_server_references",
-                use_container_width=True,
-            )
-        if clear_server_references:
-            st.session_state.pop("loaded_server_references", None)
-            st.session_state.pop("batch_result", None)
-        if load_server_references:
+    if st.session_state.get("loaded_reference_folder") != reference_reload:
+        st.session_state["loaded_reference_folder"] = reference_reload
+        st.session_state.pop("loaded_server_references", None)
+        st.session_state.pop("batch_result", None)
+        _clear_batch_assignments()
+        if reference_folder is not None:
             try:
-                loaded_references = list(server_reference_uploads(reference_server_path))
-                _remember_server_uploads("loaded_server_references", loaded_references)
-                st.session_state.pop("batch_result", None)
+                _remember_server_uploads(
+                    "loaded_server_references",
+                    list(server_reference_uploads(str(reference_folder))),
+                )
             except BatchPreparationError as exc:
                 st.error(str(exc))
-        server_reference_files = _restore_server_uploads("loaded_server_references")
-        if server_reference_files:
-            st.success(
-                f"서버 Reference {len(server_reference_files)}개를 불러왔습니다."
-            )
-            _display_table(
-                pd.DataFrame(
-                    {
-                        "Server Reference": [
-                            Path(item.name).name for item in server_reference_files
-                        ],
-                        "Path": [str(item.source_path) for item in server_reference_files],
-                    }
-                )
-            )
 
-    reference_uploads: list[object] = [
-        *list(uploaded_references or []),
-        *server_reference_files,
-    ]
+    reference_uploads: list[object] = _restore_server_uploads(
+        "loaded_server_references"
+    )
     reference_uploads = sorted(
-        list(reference_uploads or []),
+        reference_uploads,
         key=lambda item: natural_key(
             Path(str(getattr(item, "name", "reference"))).name
         ),
@@ -674,163 +757,133 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             validation_errors.append(str(exc))
 
     if reference_uploads:
+        st.success(f"Reference {len(reference_uploads)}개를 이름순으로 불러왔습니다.")
         with st.expander("Reference file check", expanded=True):
             _display_table(pd.DataFrame(reference_rows))
     for error in validation_errors:
         st.error(error)
 
-    all_reads: list[object] = []
+    st.markdown("#### 2 · ONT 결과 폴더")
+    st.caption(
+        "sample별 폴더가 들어 있는 상위 폴더를 선택하세요. FASTQ/FASTQ.GZ는 하위 폴더까지 자동 검색합니다."
+    )
+    ont_folder = _server_folder_browser(
+        "ONT 결과 폴더 탐색",
+        "ont_browser",
+        (".fastq", ".fq", ".fastq.gz", ".fq.gz", ".gz"),
+    )
+    ont_reload = (
+        str(ont_folder) if ont_folder else None,
+        st.session_state.get("ont_browser_reload", 0),
+    )
+    if st.session_state.get("loaded_ont_folder") != ont_reload:
+        st.session_state["loaded_ont_folder"] = ont_reload
+        st.session_state.pop("loaded_server_fastqs", None)
+        st.session_state.pop("batch_result", None)
+        _clear_batch_assignments()
+        if ont_folder is not None:
+            try:
+                _remember_server_uploads(
+                    "loaded_server_fastqs",
+                    list(server_fastq_uploads(str(ont_folder))),
+                )
+            except BatchPreparationError as exc:
+                st.error(str(exc))
+
+    all_reads: list[object] = _restore_server_uploads("loaded_server_fastqs")
+    grouped_reads = uploaded_samples(all_reads)
+    detected_sample_ids = list(grouped_reads)
+    if grouped_reads:
+        st.success(
+            f"ONT sample {len(grouped_reads)}개, FASTQ {len(all_reads)}개를 감지했습니다."
+        )
+        _display_table(
+            pd.DataFrame(
+                [
+                    {
+                        "Sample ID": sample_id,
+                        "FASTQ files": len(grouped_reads[sample_id]),
+                    }
+                    for sample_id in detected_sample_ids
+                ]
+            )
+        )
+
     mappings: list[dict[str, object]] = []
     assignment_rows: list[dict[str, object]] = []
 
-    if reference_uploads:
-        st.markdown("#### 2 · Reference별 ONT sample")
+    selected_by_reference: dict[str, list[str]] = {}
+    if reference_uploads and grouped_reads:
+        st.markdown("#### 3 · Reference ↔ ONT sample 배정")
         st.caption(
-            "각 영역에 해당 FASTQ 파일 또는 sample 폴더를 그대로 드래그하세요. "
-            "barcode 번호와 사용자 지정 ONT sample name을 모두 인식합니다."
+            "각 Reference에서 분석할 sample을 선택하세요. sample 수는 자유롭게 선택할 수 있습니다."
+        )
+        for index, reference_file in enumerate(reference_names, 1):
+            reference_label = Path(reference_file).stem
+            selected_ids = st.multiselect(
+                f"{index} · {reference_label}",
+                options=detected_sample_ids,
+                key=f"assignment_{index}_{sanitize_name(reference_file, str(index))}",
+                help="이 Reference와 비교할 ONT sample을 하나 이상 선택합니다.",
+                placeholder="ONT sample을 선택하세요",
+            )
+            selected_by_reference[reference_file] = list(selected_ids)
+
+    assignment_signature = tuple(
+        (reference_file, tuple(sample_ids))
+        for reference_file, sample_ids in selected_by_reference.items()
+    )
+    if st.session_state.get("batch_assignment_signature") != assignment_signature:
+        st.session_state["batch_assignment_signature"] = assignment_signature
+        st.session_state.pop("batch_result", None)
+
+    owners: dict[str, list[str]] = {}
+    for reference_file, sample_ids in selected_by_reference.items():
+        for sample_id in sample_ids:
+            owners.setdefault(sample_id, []).append(reference_file)
+    duplicated_ids = sorted(
+        (sample_id for sample_id, refs in owners.items() if len(refs) > 1),
+        key=natural_key,
+    )
+    if duplicated_ids:
+        validation_errors.append(
+            "같은 ONT sample은 한 Reference에만 배정할 수 있습니다: "
+            + ", ".join(duplicated_ids)
+        )
+        st.error(validation_errors[-1])
+
+    for reference_file in reference_names:
+        sample_ids = selected_by_reference.get(reference_file, [])
+        if not sample_ids:
+            continue
+        mappings.append(
+            {
+                "reference": reference_file,
+                "samples": [
+                    {"name": sample_id, "files": grouped_reads[sample_id]}
+                    for sample_id in sample_ids
+                ],
+            }
+        )
+        assignment_rows.append(
+            {
+                "Reference": reference_file,
+                "Samples": len(sample_ids),
+                "Sample ID": ", ".join(sample_ids),
+                "FASTQ files": sum(len(grouped_reads[item]) for item in sample_ids),
+            }
         )
 
-    for index, reference_file in enumerate(reference_names, 1):
-        reference_label = Path(reference_file).stem
-        with st.expander(f"{index} · {reference_label}", expanded=True):
-            sample_key = f"{index}_{sanitize_name(reference_label)}"
-            sample_source = st.radio(
-                f"{reference_label}의 ONT sample 위치",
-                ["Windows PC에서 업로드", "Linux server 경로"],
-                horizontal=True,
-                key=f"sample_source_{sample_key}",
-                help="Reference마다 PC 업로드 또는 Linux server folder를 선택할 수 있습니다.",
-            )
-            uploaded_files: list[object] = []
-            if sample_source == "Windows PC에서 업로드":
-                uploaded = st.file_uploader(
-                    f"{reference_label}의 ONT FASTQ / sample folder",
-                    type=["fastq", "fq", "gz"],
-                    accept_multiple_files="directory",
-                    key=f"batch_reads_{sample_key}",
-                    help=(
-                        "FASTQ 파일 또는 FASTQ가 들어 있는 폴더를 드래그합니다. Sample ID는 "
-                        "barcode 번호, 폴더명 또는 FASTQ 파일명에서 자동으로 가져옵니다."
-                    ),
-                )
-                uploaded_files = list(uploaded or [])
-            else:
-                sample_server_path = st.text_input(
-                    f"{reference_label}의 FASTQ file 또는 folder Linux 경로",
-                    placeholder=f"/data/user/MCET03/04_ONT/reads/{reference_label}",
-                    key=f"sample_server_path_{sample_key}",
-                    help=(
-                        "FASTQ 또는 sample별 하위 폴더가 들어 있는 상위 폴더의 절대경로를 입력합니다. "
-                        "파일은 server에서 직접 읽으므로 브라우저 업로드 시간이 들지 않습니다."
-                    ),
-                )
-                state_key = f"loaded_server_fastqs_{sample_key}"
-                if st.button(
-                    "서버 ONT sample 불러오기",
-                    key=f"load_server_fastqs_{sample_key}",
-                    help="입력한 경로를 한 번만 검색해 FASTQ 목록을 저장합니다.",
-                ):
-                    try:
-                        loaded_fastqs = list(server_fastq_uploads(sample_server_path))
-                        _remember_server_uploads(state_key, loaded_fastqs)
-                    except BatchPreparationError as exc:
-                        st.error(str(exc))
-                uploaded_files = _restore_server_uploads(state_key)
-                if uploaded_files:
-                    st.success(f"서버에서 FASTQ {len(uploaded_files)}개를 불러왔습니다.")
-            grouped = uploaded_samples(uploaded_files)
-
-            if grouped:
-                detected_ids = list(grouped)
-                editor_rows = pd.DataFrame(
-                    [
-                        {
-                            "Detected input": sample_id,
-                            "Sample ID": sample_id,
-                            "FASTQ files": len(grouped[sample_id]),
-                        }
-                        for sample_id in detected_ids
-                    ]
-                )
-                edit_sample_ids = st.checkbox(
-                    "Sample ID 직접 수정",
-                    value=False,
-                    key=f"edit_sample_ids_{index}_{sanitize_name(reference_label)}",
-                    help="자동 인식된 이름이 실제 sample name과 다를 때만 켭니다.",
-                )
-                edited_rows = editor_rows
-                if edit_sample_ids:
-                    st.caption(
-                        "여러 FASTQ chunk를 하나로 묶으려면 같은 Sample ID를 입력합니다."
-                    )
-                    editor_key_suffix = abs(
-                        hash(tuple(str(getattr(item, "name", "")) for item in uploaded_files))
-                    )
-                    if PYARROW_AVAILABLE:
-                        edited_rows = st.data_editor(
-                            editor_rows,
-                            hide_index=True,
-                            use_container_width=True,
-                            disabled=["Detected input", "FASTQ files"],
-                            key=(
-                                f"sample_ids_{index}_{sanitize_name(reference_label)}_"
-                                f"{editor_key_suffix}"
-                            ),
-                            column_config={
-                                "Sample ID": st.column_config.TextColumn(
-                                    help="결과에 표시할 ONT sample name입니다.", required=True
-                                )
-                            },
-                        )
-                    else:
-                        edited_rows = editor_rows.copy()
-                        for row_number, row in edited_rows.iterrows():
-                            edited_rows.at[row_number, "Sample ID"] = st.text_input(
-                                f"{row['Detected input']} → Sample ID",
-                                value=str(row["Sample ID"]),
-                                key=(
-                                    f"sample_id_text_{index}_{row_number}_"
-                                    f"{editor_key_suffix}"
-                                ),
-                            )
-                renamed_groups: dict[str, list[object]] = {}
-                for row in edited_rows.to_dict("records"):
-                    detected_id = str(row["Detected input"])
-                    sample_id = sanitize_name(str(row["Sample ID"]), detected_id)
-                    renamed_groups.setdefault(sample_id, []).extend(grouped[detected_id])
-                grouped = dict(
-                    sorted(renamed_groups.items(), key=lambda item: natural_key(item[0]))
-                )
-                sample_ids = list(grouped)
-                st.success(
-                    f"{len(sample_ids)} samples 감지: " + ", ".join(sample_ids)
-                )
-                mappings.append(
-                    {
-                        "reference": reference_file,
-                        "samples": [
-                            {"name": sample_id, "files": grouped[sample_id]}
-                            for sample_id in sample_ids
-                        ],
-                    }
-                )
-                all_reads.extend(uploaded_files)
-                assignment_rows.append(
-                    {
-                        "Reference": reference_file,
-                        "Samples": len(sample_ids),
-                        "Sample ID": ", ".join(sample_ids),
-                        "FASTQ files": len(uploaded_files),
-                    }
-                )
-            elif uploaded_files:
-                st.error("분석 가능한 FASTQ/FASTQ.GZ 파일을 찾지 못했습니다.")
-            else:
-                st.caption("아직 ONT sample을 올리지 않았습니다.")
-
     if assignment_rows:
-        st.markdown("#### 3 · 분석 전 최종 확인")
+        st.markdown("#### 4 · 분석 전 최종 확인")
         _display_table(pd.DataFrame(assignment_rows))
+
+    assigned_ids = set(owners)
+    unassigned_ids = [
+        sample_id for sample_id in detected_sample_ids if sample_id not in assigned_ids
+    ]
+    if unassigned_ids:
+        st.info("미배정 sample: " + ", ".join(unassigned_ids))
 
     total_samples = sum(int(row["Samples"]) for row in assignment_rows)
     metrics = st.columns(3)
@@ -841,12 +894,13 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     every_reference_has_reads = (
         bool(reference_uploads) and len(mappings) == len(reference_uploads)
     )
-    if reference_uploads and not every_reference_has_reads:
-        st.warning("모든 reference 영역에 한 개 이상의 ONT sample을 올리세요.")
+    if reference_uploads and grouped_reads and not every_reference_has_reads:
+        st.warning("모든 Reference에 한 개 이상의 ONT sample을 배정하세요.")
 
     can_run = (
         every_reference_has_reads
         and not validation_errors
+        and not duplicated_ids
         and total_samples > 0
     )
     if st.button(
@@ -855,7 +909,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         disabled=not can_run,
         key="batch_run",
         use_container_width=True,
-        help="각 reference 영역에 연결된 ONT sample을 분석합니다.",
+        help="확인한 Reference와 ONT sample 배정대로 분석합니다.",
     ):
         try:
             missing_tools = [
@@ -905,12 +959,9 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                 result = collect_batch_results(job)
             progress_box.success(f"{job.sample_count} samples 분석을 완료했습니다.")
             st.session_state["batch_result"] = {"job": job, "result": result}
-        except (
-            BatchPreparationError,
-            BatchExecutionError,
-            SequenceValidationError,
-            OSError,
-        ) as exc:
+        except BatchExecutionError:
+            st.error("분석 실행 중 오류가 발생했습니다. 입력 파일과 설정을 확인하세요.")
+        except (BatchPreparationError, SequenceValidationError, OSError) as exc:
             st.error(str(exc))
 
     batch_state = st.session_state.get("batch_result")
@@ -1030,15 +1081,11 @@ def _raw_ont_tab(settings: dict[str, object]) -> None:
                 read_paths=read_paths,
                 uploaded_reads=upload_streams,
             )
-            log_placeholder = st.empty()
             progress_placeholder = st.empty()
-            log_lines: list[str] = []
 
             def show_line(line: str) -> None:
-                log_lines.append(line)
-                log_placeholder.code("\n".join(log_lines[-80:]), language="text")
                 if "[" in line and "/6]" in line:
-                    progress_placeholder.info(line)
+                    progress_placeholder.info("분석을 진행하고 있습니다…")
 
             with st.spinner("ONT pipeline is running. Keep this browser tab open…"):
                 run = run_job(REPOSITORY_ROOT, job, on_line=show_line)

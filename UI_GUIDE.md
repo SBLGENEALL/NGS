@@ -103,18 +103,16 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 ## 3. Batch analysis (권장)
 
-1. Windows Explorer의 Reference FASTA는 drag-and-drop 영역에 올립니다. MobaXterm
-   SFTP에서 브라우저로 직접 드래그되지 않는 환경에서는 아래의 접힌
-   `Linux server에 있는 Reference 불러오기`를 열고 `pwd`로 확인한 파일 또는 폴더의
-   절대경로를 입력합니다. PC 파일과 server 파일을 함께 사용할 수도 있습니다.
+1. `Reference 폴더 탐색`에서 폴더 버튼을 눌러 이동하고, FASTA가 들어 있는 폴더에서
+   `이 폴더 사용`을 누릅니다. 탐색 범위는 기본적으로 `/data/user/MCET03` 아래로
+   제한됩니다.
 2. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
    `Reference file check`에서 정렬된 파일명과 길이를 확인합니다.
-3. Reference별로 Windows 업로드 또는 Linux server 경로를 선택합니다. Server 경로는
-   FASTQ 한 개 또는 sample 하위 폴더를 포함한 상위 폴더를 지정할 수 있습니다.
-   Server FASTQ는 복사하지 않고 원본을 직접 연결하므로 대용량 upload 시간이 없습니다.
-4. 필요하면 `Sample ID 직접 수정`을 켜서 자동 인식된 ONT sample name을 수정합니다.
-   여러 FASTQ chunk에 같은 Sample ID를 입력하면 하나의 sample로 합쳐 분석합니다.
-5. `분석 전 최종 확인`에서 reference별 Sample ID와 FASTQ 개수를 확인합니다.
+3. `ONT 결과 폴더 탐색`에서 sample 하위 폴더가 들어 있는 상위 폴더를 선택합니다.
+   FASTQ/FASTQ.GZ는 하위 폴더까지 자동 검색하며 원본을 직접 연결합니다.
+4. 감지된 ONT sample을 각 Reference의 선택 상자에서 자유롭게 배정합니다. 같은 sample을
+   두 Reference에 중복 배정하면 실행할 수 없습니다.
+5. `분석 전 최종 확인`에서 Reference별 Sample ID와 FASTQ 개수를 확인합니다.
 6. 왼쪽의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 설정 화면에서
    CPU, 병렬 sample 수, read filter 및 variant review 기준을 저장할 수 있습니다.
 7. 중복·누락 경고가 없는지 확인한 뒤 `Batch analysis 실행`을 누릅니다.
@@ -128,13 +126,13 @@ chart가 자동 활성화되며, 어느 경우에도 variant calling 결과에�
 결과는 reference별로 연결된 sample이 묶여 표시되며 `CLEAN`,
 `VARIANT DETECTED`, `REVIEW`, `ERROR` 상태를 제공합니다. 전체 결과 요약은 CSV로
 내려받을 수 있고 BAM, VCF, consensus FASTA 및 보고서는 서버 결과 폴더에 남습니다.
-실행 command와 상세 출력은 기본적으로 접힌 `Analysis log`에서 필요할 때만 확인합니다.
+실행 command, 상세 log, 서버 결과 경로는 UI에 표시되지 않습니다. 관리자 진단을 위한
+log 파일은 서버 실행 폴더에 계속 보존됩니다.
 
 Sample ID는 `barcode13` 같은 번호, ONT sample alias 폴더명 또는 FASTQ 파일명에서
 자동으로 가져옵니다. 따라서 barcode라는 이름을 반드시 사용할 필요가 없습니다.
 
-> 디렉터리 업로드를 위해 Streamlit 1.57 이상이 필요합니다. FASTQ는 브라우저를
-> 통해 서버로 전송되므로 분석 중 브라우저 탭을 닫지 마세요.
+> 기본 탐색 root를 바꾸려면 UI 실행 전에 `ONT_SERVER_ROOT` 환경변수를 지정합니다.
 
 ## 4. 결과 위치
 
