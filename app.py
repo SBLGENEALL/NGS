@@ -25,6 +25,7 @@ from ont_ui.batch import (
     BatchPreparationError,
     BatchSettings,
     ServerPathUpload,
+    balanced_sample_assignment,
     collect_batch_results,
     natural_key,
     parse_uploaded_reference,
@@ -43,8 +44,17 @@ from ont_ui.sequences import (
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
 SERVER_DATA_ROOT = Path(
-    os.environ.get("ONT_SERVER_ROOT", "/data/user/MCET03")
+    os.environ.get("ONT_SERVER_ROOT", "/")
 ).expanduser().resolve()
+_default_server_start = Path(
+    os.environ.get("ONT_SERVER_START", "/data/user/MCET03")
+).expanduser().resolve()
+SERVER_BROWSER_START = (
+    _default_server_start
+    if _default_server_start.is_dir()
+    and _default_server_start.is_relative_to(SERVER_DATA_ROOT)
+    else SERVER_DATA_ROOT
+)
 
 DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
     "Batch analysis": {
@@ -70,23 +80,24 @@ def _display_table(frame: pd.DataFrame) -> None:
             return
         except (ImportError, ModuleNotFoundError):
             pass
+    def markdown_cell(value: object) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value).replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+
+    columns = [markdown_cell(column) for column in frame.columns]
+    rows = [
+        "| " + " | ".join(markdown_cell(value) for value in row) + " |"
+        for row in frame.itertuples(index=False, name=None)
+    ]
     st.markdown(
-        """
-        <style>
-        .ont-html-table { overflow-x:auto; margin:.25rem 0 1rem; }
-        .ont-html-table table { width:100%; border-collapse:collapse; font-size:.88rem; }
-        .ont-html-table th { background:#F5F7FC; color:#24324A; font-weight:650; }
-        .ont-html-table th, .ont-html-table td {
-            border:1px solid #E2E7F0; padding:.48rem .58rem; text-align:left;
-            vertical-align:top;
-        }
-        .ont-html-table tr:nth-child(even) td { background:#FAFBFD; }
-        </style>
-        """
-        + '<div class="ont-html-table">'
-        + frame.to_html(index=False, escape=True, na_rep="")
-        + "</div>",
-        unsafe_allow_html=True,
+        "\n".join(
+            [
+                "| " + " | ".join(columns) + " |",
+                "| " + " | ".join("---" for _ in columns) + " |",
+                *rows,
+            ]
+        )
     )
 
 
@@ -146,7 +157,9 @@ def _server_folder_browser(
         st.error("서버 data 폴더에 접근할 수 없습니다. 관리자에게 확인하세요.")
         return None
 
-    current_raw = st.session_state.get(f"{state_key}_current", str(SERVER_DATA_ROOT))
+    current_raw = st.session_state.get(
+        f"{state_key}_current", str(SERVER_BROWSER_START)
+    )
     current = Path(str(current_raw)).expanduser().resolve()
     if not current.is_dir() or not _inside_server_root(current):
         current = SERVER_DATA_ROOT
@@ -176,12 +189,12 @@ def _server_folder_browser(
             )
         with navigation[1]:
             if st.button(
-                "⌂ 처음",
+                "⌂ 시작 위치",
                 key=f"{state_key}_root",
-                disabled=current == SERVER_DATA_ROOT,
+                disabled=current == SERVER_BROWSER_START,
                 use_container_width=True,
             ):
-                st.session_state[f"{state_key}_current"] = str(SERVER_DATA_ROOT)
+                st.session_state[f"{state_key}_current"] = str(SERVER_BROWSER_START)
                 st.rerun()
 
         try:
@@ -694,18 +707,19 @@ def _render_batch_results(result: dict[str, object], job) -> None:
 
 
 def _batch_ont_tab(settings: dict[str, object]) -> None:
-    st.subheader("Batch analysis")
-    st.write(
-        "서버에서 Reference 폴더와 ONT 결과 폴더를 고른 뒤 sample을 배정하세요."
-    )
+    st.title("Batch analysis")
+    st.caption("Reference 폴더와 ONT 결과 폴더를 선택하면 sample을 이름순으로 자동 배정합니다.")
 
-    st.markdown("#### 1 · Reference 폴더")
-    st.caption("FASTA 파일이 들어 있는 폴더로 이동한 뒤 `이 폴더 사용`을 누르세요.")
-    reference_folder = _server_folder_browser(
-        "Reference 폴더 탐색",
-        "reference_browser",
-        (".fasta", ".fa", ".fna", ".txt"),
-    )
+    reference_is_selected = bool(st.session_state.get("reference_browser_selected"))
+    with st.expander(
+        "1 · Reference 폴더 선택",
+        expanded=not reference_is_selected,
+    ):
+        reference_folder = _server_folder_browser(
+            "서버 폴더",
+            "reference_browser",
+            (".fasta", ".fa", ".fna", ".txt"),
+        )
     reference_reload = (
         str(reference_folder) if reference_folder else None,
         st.session_state.get("reference_browser_reload", 0),
@@ -757,21 +771,24 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             validation_errors.append(str(exc))
 
     if reference_uploads:
-        st.success(f"Reference {len(reference_uploads)}개를 이름순으로 불러왔습니다.")
-        with st.expander("Reference file check", expanded=True):
-            _display_table(pd.DataFrame(reference_rows))
+        st.success(f"Reference {len(reference_uploads)}개 선택 완료")
+        with st.expander(f"Reference 확인 · {len(reference_uploads)}개", expanded=False):
+            for row in reference_rows:
+                st.write(f"• {row['Reference file']}  ·  {row['Length (bp)']:,} bp")
     for error in validation_errors:
         st.error(error)
 
-    st.markdown("#### 2 · ONT 결과 폴더")
-    st.caption(
-        "sample별 폴더가 들어 있는 상위 폴더를 선택하세요. FASTQ/FASTQ.GZ는 하위 폴더까지 자동 검색합니다."
-    )
-    ont_folder = _server_folder_browser(
-        "ONT 결과 폴더 탐색",
-        "ont_browser",
-        (".fastq", ".fq", ".fastq.gz", ".fq.gz", ".gz"),
-    )
+    ont_is_selected = bool(st.session_state.get("ont_browser_selected"))
+    with st.expander(
+        "2 · ONT 결과 폴더 선택",
+        expanded=not ont_is_selected,
+    ):
+        st.caption("sample 폴더들이 들어 있는 상위 폴더를 선택하세요.")
+        ont_folder = _server_folder_browser(
+            "서버 폴더",
+            "ont_browser",
+            (".fastq", ".fq", ".fastq.gz", ".fq.gz", ".gz"),
+        )
     ont_reload = (
         str(ont_folder) if ont_folder else None,
         st.session_state.get("ont_browser_reload", 0),
@@ -794,40 +811,32 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     grouped_reads = uploaded_samples(all_reads)
     detected_sample_ids = list(grouped_reads)
     if grouped_reads:
-        st.success(
-            f"ONT sample {len(grouped_reads)}개, FASTQ {len(all_reads)}개를 감지했습니다."
-        )
-        _display_table(
-            pd.DataFrame(
-                [
-                    {
-                        "Sample ID": sample_id,
-                        "FASTQ files": len(grouped_reads[sample_id]),
-                    }
-                    for sample_id in detected_sample_ids
-                ]
-            )
-        )
+        st.success(f"ONT sample {len(grouped_reads)}개 선택 완료")
 
     mappings: list[dict[str, object]] = []
     assignment_rows: list[dict[str, object]] = []
 
     selected_by_reference: dict[str, list[str]] = {}
     if reference_uploads and grouped_reads:
-        st.markdown("#### 3 · Reference ↔ ONT sample 배정")
-        st.caption(
-            "각 Reference에서 분석할 sample을 선택하세요. sample 수는 자유롭게 선택할 수 있습니다."
+        automatic = balanced_sample_assignment(reference_names, detected_sample_ids)
+        st.success(
+            f"자동 배정 완료 · Reference {len(reference_names)}개 / ONT sample {len(detected_sample_ids)}개"
         )
-        for index, reference_file in enumerate(reference_names, 1):
-            reference_label = Path(reference_file).stem
-            selected_ids = st.multiselect(
-                f"{index} · {reference_label}",
-                options=detected_sample_ids,
-                key=f"assignment_{index}_{sanitize_name(reference_file, str(index))}",
-                help="이 Reference와 비교할 ONT sample을 하나 이상 선택합니다.",
-                placeholder="ONT sample을 선택하세요",
+        with st.expander("자동 배정 수정", expanded=False):
+            st.caption(
+                "Reference와 sample을 이름순으로 균등 배정했습니다. 필요한 경우에만 바꾸세요."
             )
-            selected_by_reference[reference_file] = list(selected_ids)
+            for index, reference_file in enumerate(reference_names, 1):
+                reference_label = Path(reference_file).stem
+                selected_ids = st.multiselect(
+                    reference_label,
+                    options=detected_sample_ids,
+                    default=automatic.get(reference_file, []),
+                    key=f"assignment_{index}_{sanitize_name(reference_file, str(index))}",
+                    help="이 Reference와 비교할 ONT sample을 선택합니다.",
+                    placeholder="ONT sample 선택",
+                )
+                selected_by_reference[reference_file] = list(selected_ids)
 
     assignment_signature = tuple(
         (reference_file, tuple(sample_ids))
@@ -874,28 +883,20 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             }
         )
 
-    if assignment_rows:
-        st.markdown("#### 4 · 분석 전 최종 확인")
-        _display_table(pd.DataFrame(assignment_rows))
-
     assigned_ids = set(owners)
     unassigned_ids = [
         sample_id for sample_id in detected_sample_ids if sample_id not in assigned_ids
     ]
     if unassigned_ids:
-        st.info("미배정 sample: " + ", ".join(unassigned_ids))
+        st.warning(f"배정되지 않은 ONT sample이 {len(unassigned_ids)}개 있습니다.")
 
     total_samples = sum(int(row["Samples"]) for row in assignment_rows)
-    metrics = st.columns(3)
-    metrics[0].metric("Reference", len(reference_uploads))
-    metrics[1].metric("감지된 samples", total_samples)
-    metrics[2].metric("FASTQ files", len(all_reads))
 
     every_reference_has_reads = (
         bool(reference_uploads) and len(mappings) == len(reference_uploads)
     )
     if reference_uploads and grouped_reads and not every_reference_has_reads:
-        st.warning("모든 Reference에 한 개 이상의 ONT sample을 배정하세요.")
+        st.warning("ONT sample이 배정되지 않은 Reference가 있습니다.")
 
     can_run = (
         every_reference_has_reads
@@ -1210,7 +1211,7 @@ def _sidebar() -> dict[str, object]:
                     linear-gradient(155deg, #172EAE 0%, #4A38D0 53%, #A978EE 100%);
             }
             [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-                padding-bottom:155px;
+                padding-bottom:210px;
             }
             [data-testid="stSidebar"] h1,
             [data-testid="stSidebar"] h2,
@@ -1237,6 +1238,18 @@ def _sidebar() -> dict[str, object]:
                 background:rgba(255,255,255,.23);
                 border-color:rgba(255,255,255,.72);
             }
+            [data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {
+                min-height:3.45rem; font-size:1.12rem; font-weight:750;
+                background:rgba(255,255,255,.96); color:#2639A7;
+                border:0; box-shadow:0 8px 22px rgba(17,26,100,.24);
+            }
+            [data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] p {
+                color:#2639A7;
+            }
+            [data-testid="stSidebar"] [data-testid="stButton"]:has(button[kind="secondary"]) {
+                position:fixed; left:1.5rem; bottom:6.6rem; width:220px;
+                z-index:1000;
+            }
             .sidebar-brand-footer {
                 position:fixed; left:1.5rem; bottom:1rem; width:220px;
                 box-sizing:border-box; z-index:999; padding:4px 8px;
@@ -1261,10 +1274,18 @@ def _sidebar() -> dict[str, object]:
         )
         st.markdown("### ONT Plasmid Analyzer")
         st.caption("ONT plasmid 변이 분석")
-        st.markdown("**Batch analysis**")
+
+        st.button(
+            "🧬  Batch analysis",
+            type="primary",
+            use_container_width=True,
+            on_click=_close_settings_page,
+            help="분석 화면으로 이동합니다.",
+        )
 
         st.button(
             "⚙ Analysis settings",
+            type="secondary",
             use_container_width=True,
             on_click=_open_settings_page,
             help="선택한 분석의 설정을 가운데 화면에서 변경합니다.",

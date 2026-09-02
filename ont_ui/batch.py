@@ -122,6 +122,25 @@ def natural_key(value: str) -> tuple[object, ...]:
     )
 
 
+def balanced_sample_assignment(
+    reference_names: Sequence[str],
+    sample_ids: Sequence[str],
+) -> dict[str, list[str]]:
+    """Assign naturally sorted samples to references in contiguous balanced groups."""
+    references = sorted(reference_names, key=natural_key)
+    samples = sorted(sample_ids, key=natural_key)
+    if not references:
+        return {}
+    per_reference, remainder = divmod(len(samples), len(references))
+    assignments: dict[str, list[str]] = {}
+    offset = 0
+    for index, reference in enumerate(references):
+        group_size = per_reference + (1 if index < remainder else 0)
+        assignments[reference] = samples[offset : offset + group_size]
+        offset += group_size
+    return assignments
+
+
 def normalize_barcode(value: str) -> str | None:
     match = BARCODE_RE.match((value or "").strip())
     if not match:
