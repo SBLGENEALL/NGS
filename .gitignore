@@ -19,3 +19,4 @@ branding_sidebar_logo.png
 # Local UI launcher state
 .ont_ui.pid
 ui_launcher.log
+Launch_ONT_UI_Remote.cmd
