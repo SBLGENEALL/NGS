@@ -148,6 +148,7 @@ BAM/BAM.BAI와 depth 파일은 크기가 클 수 있어 결과 폴더에만 보�
 ## 6. 성능 최적화
 
 - Pipeline command는 브라우저에 실시간으로 반복 출력하지 않고 `pipeline.log`에 저장합니다.
+- 공유 filesystem에서 불필요한 source scan이 발생하지 않도록 Streamlit file watcher를 끕니다.
 - 진행 화면은 완료된 sample 수만 갱신합니다.
 - Sample ID 편집표와 reference별 상세 결과는 사용자가 요청할 때만 생성합니다.
 - Analysis log는 사용자가 선택할 때 최근 300줄만 표시합니다.
