@@ -97,9 +97,10 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 ## 3. Batch analysis (권장)
 
-1. Windows Explorer 또는 MobaXterm SFTP에서 필요한 Reference FASTA를 한 개의
-   drag-and-drop 영역으로 모두 올립니다. Reference는 크기가 작아 브라우저 업로드를
-   사용하고, 대용량 ONT FASTQ만 Linux server 경로 기능을 사용합니다.
+1. Windows Explorer의 Reference FASTA는 drag-and-drop 영역에 올립니다. MobaXterm
+   SFTP에서 브라우저로 직접 드래그되지 않는 환경에서는 아래의 접힌
+   `Linux server에 있는 Reference 불러오기`를 열고 `pwd`로 확인한 파일 또는 폴더의
+   절대경로를 입력합니다. PC 파일과 server 파일을 함께 사용할 수도 있습니다.
 2. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
    `Reference file check`에서 정렬된 파일명과 길이를 확인합니다.
 3. Reference별로 Windows 업로드 또는 Linux server 경로를 선택합니다. Server 경로는

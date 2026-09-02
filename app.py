@@ -23,6 +23,7 @@ from ont_ui.batch import (
     prepare_batch_job,
     run_batch_job,
     server_fastq_uploads,
+    server_reference_uploads,
     uploaded_samples,
 )
 from ont_ui.sequences import (
@@ -547,7 +548,63 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             "이름에 따라 ONT sample 영역이 자동으로 생성됩니다."
         ),
     )
-    reference_uploads: list[object] = list(uploaded_references or [])
+    server_reference_files: list[ServerPathUpload] = []
+    with st.expander("Linux server에 있는 Reference 불러오기", expanded=False):
+        st.caption(
+            "MobaXterm의 현재 경로를 복사해 붙여 넣으세요. FASTA 파일 한 개 또는 "
+            "여러 FASTA가 들어 있는 폴더를 지정할 수 있습니다."
+        )
+        reference_server_path = st.text_input(
+            "Reference file 또는 folder의 절대경로",
+            placeholder="/data/user/MCET03/04_ONT/references",
+            key="reference_server_path",
+            help="Linux에서 pwd로 확인한 절대경로를 입력합니다.",
+        )
+        load_columns = st.columns([3, 1])
+        with load_columns[0]:
+            load_server_references = st.button(
+                "서버 Reference 불러오기",
+                key="load_server_references",
+                use_container_width=True,
+            )
+        with load_columns[1]:
+            clear_server_references = st.button(
+                "초기화",
+                key="clear_server_references",
+                use_container_width=True,
+            )
+        if clear_server_references:
+            st.session_state.pop("loaded_server_references", None)
+            st.session_state.pop("batch_result", None)
+        if load_server_references:
+            try:
+                loaded_references = list(server_reference_uploads(reference_server_path))
+                _remember_server_uploads("loaded_server_references", loaded_references)
+                st.session_state.pop("batch_result", None)
+            except BatchPreparationError as exc:
+                st.error(str(exc))
+        server_reference_files = _restore_server_uploads("loaded_server_references")
+        if server_reference_files:
+            st.success(
+                f"서버 Reference {len(server_reference_files)}개를 불러왔습니다."
+            )
+            st.dataframe(
+                pd.DataFrame(
+                    {
+                        "Server Reference": [
+                            Path(item.name).name for item in server_reference_files
+                        ],
+                        "Path": [str(item.source_path) for item in server_reference_files],
+                    }
+                ),
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    reference_uploads: list[object] = [
+        *list(uploaded_references or []),
+        *server_reference_files,
+    ]
     reference_uploads = sorted(
         list(reference_uploads or []),
         key=lambda item: natural_key(
