@@ -1,0 +1,16 @@
+Reference,Sample ID,Expected variant,Expected detail
+demo_plasmid_01.fasta,P01_Control,None,Reference match
+demo_plasmid_01.fasta,P01_SNP,SNP,301:T>A
+demo_plasmid_01.fasta,P01_Insertion,Insertion,A inserted after reference position 701
+demo_plasmid_02.fasta,P02_Control,None,Reference match
+demo_plasmid_02.fasta,P02_SNP,SNP,301:A>C
+demo_plasmid_02.fasta,P02_Deletion,Deletion,A deleted at reference position 701
+demo_plasmid_03.fasta,P03_Control,None,Reference match
+demo_plasmid_03.fasta,P03_SNP,SNP,301:A>C
+demo_plasmid_03.fasta,P03_Insertion,Insertion,A inserted after reference position 701
+demo_plasmid_04.fasta,P04_Control,None,Reference match
+demo_plasmid_04.fasta,P04_SNP,SNP,301:C>G
+demo_plasmid_04.fasta,P04_Deletion,Deletion,G deleted at reference position 701
+demo_plasmid_05.fasta,P05_Control,None,Reference match
+demo_plasmid_05.fasta,P05_SNP,SNP,301:G>T
+demo_plasmid_05.fasta,P05_Insertion,Insertion,A inserted after reference position 701
