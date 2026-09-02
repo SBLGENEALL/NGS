@@ -10,6 +10,8 @@ from ont_ui.batch import (
     barcode_from_upload_name,
     natural_key,
     prepare_batch_job,
+    server_fastq_uploads,
+    server_reference_uploads,
     uploaded_barcodes,
     uploaded_samples,
 )
@@ -26,6 +28,53 @@ class Upload(io.BytesIO):
 
 
 class BatchTests(unittest.TestCase):
+    def test_server_paths_load_references_and_group_sample_folders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            references = root / "references"
+            reads = root / "reads"
+            references.mkdir()
+            (references / "vector10.fasta").write_text(">v10\nACGT\n")
+            (references / "vector2.fasta").write_text(">v2\nACGT\n")
+            (reads / "Clone_B").mkdir(parents=True)
+            (reads / "Clone_A").mkdir(parents=True)
+            (reads / "Clone_B" / "reads.fastq").write_text("@r\nA\n+\nI\n")
+            (reads / "Clone_A" / "reads.fastq.gz").write_bytes(b"test")
+
+            reference_uploads = server_reference_uploads(str(references))
+            fastq_uploads = server_fastq_uploads(str(reads))
+
+            self.assertEqual(
+                [Path(item.name).name for item in reference_uploads],
+                ["vector2.fasta", "vector10.fasta"],
+            )
+            self.assertEqual(list(uploaded_samples(fastq_uploads)), ["Clone_A", "Clone_B"])
+
+    def test_server_fastq_is_linked_without_copying_large_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            reference_path = root / "vector.fasta"
+            reads_dir = root / "Clone_A"
+            reads_dir.mkdir()
+            reference_path.write_text(">ref\nACGTACGT\n")
+            reads_path = reads_dir / "reads.fastq"
+            reads_path.write_text("@r\nACGT\n+\nIIII\n")
+            references = server_reference_uploads(str(reference_path))
+            reads = server_fastq_uploads(str(reads_dir))
+            mappings = [
+                {
+                    "reference": "vector.fasta",
+                    "samples": [{"name": "Clone_A", "files": reads}],
+                }
+            ]
+            run_root = root / "runs"
+            job = prepare_batch_job(
+                run_root, references, reads, mappings, BatchSettings("server")
+            )
+            staged = next((job.job_dir / "staged" / "data" / "server").rglob("*.fastq"))
+            self.assertTrue(staged.is_symlink())
+            self.assertEqual(staged.resolve(), reads_path.resolve())
+
     def test_reference_names_use_natural_order(self):
         names = ["demo_plasmid_10.fasta", "demo_plasmid_02.fasta", "demo_plasmid_01.fasta"]
         self.assertEqual(

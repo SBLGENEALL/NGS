@@ -20,6 +20,7 @@ from .sequences import SequenceRecord, parse_single_sequence, sanitize_name, wri
 
 BARCODE_RE = re.compile(r"^barcode0*([0-9]+)$", re.IGNORECASE)
 FASTQ_SUFFIXES = (".fastq", ".fq", ".fastq.gz", ".fq.gz", ".gz")
+REFERENCE_SUFFIXES = (".fasta", ".fa", ".fna", ".txt")
 GENERIC_READ_NAMES = {"read", "reads", "fastq", "fastq_pass", "pass", "fail"}
 
 
@@ -29,6 +30,66 @@ class BatchPreparationError(ValueError):
 
 class BatchExecutionError(RuntimeError):
     pass
+
+
+class ServerPathUpload:
+    """Small UploadedFile-compatible wrapper around a readable server file."""
+
+    def __init__(self, source_path: Path, name: str | None = None):
+        resolved = source_path.expanduser().resolve()
+        if not resolved.is_file():
+            raise BatchPreparationError(f"서버 파일을 찾을 수 없습니다: {resolved}")
+        self.source_path = resolved
+        self.name = name or resolved.name
+        self.size = resolved.stat().st_size
+
+    def getvalue(self) -> bytes:
+        return self.source_path.read_bytes()
+
+
+def _server_files(
+    value: str,
+    suffixes: tuple[str, ...],
+    description: str,
+) -> list[ServerPathUpload]:
+    raw = (value or "").strip()
+    if not raw:
+        raise BatchPreparationError(f"{description} 경로를 입력하세요.")
+    root = Path(raw).expanduser().resolve()
+    if not root.exists():
+        raise BatchPreparationError(f"서버 경로를 찾을 수 없습니다: {root}")
+    if root.is_file():
+        paths = [root] if root.name.lower().endswith(suffixes) else []
+        names = [root.name]
+    elif root.is_dir():
+        paths = sorted(
+            (
+                path
+                for path in root.rglob("*")
+                if path.is_file() and path.name.lower().endswith(suffixes)
+            ),
+            key=lambda path: natural_key(path.relative_to(root).as_posix()),
+        )
+        names = [path.relative_to(root).as_posix() for path in paths]
+    else:
+        paths = []
+        names = []
+    if not paths:
+        expected = ", ".join(suffixes)
+        raise BatchPreparationError(
+            f"{root}에서 {description} 파일을 찾지 못했습니다. 지원 형식: {expected}"
+        )
+    return [ServerPathUpload(path, name) for path, name in zip(paths, names)]
+
+
+def server_reference_uploads(value: str) -> list[ServerPathUpload]:
+    """Load reference files from one server file or a server directory."""
+    return _server_files(value, REFERENCE_SUFFIXES, "Reference")
+
+
+def server_fastq_uploads(value: str) -> list[ServerPathUpload]:
+    """Load FASTQs recursively while retaining relative sample folder names."""
+    return _server_files(value, FASTQ_SUFFIXES, "ONT FASTQ")
 
 
 @dataclass(frozen=True)
@@ -164,6 +225,10 @@ def _safe_upload_path(value: str, fallback: str) -> Path:
 
 def _copy_upload(uploaded: object, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
+    source_path = getattr(uploaded, "source_path", None)
+    if isinstance(source_path, Path) and source_path.is_file():
+        destination.symlink_to(source_path.resolve())
+        return
     if hasattr(uploaded, "seek"):
         uploaded.seek(0)  # type: ignore[attr-defined]
     with destination.open("wb") as output:

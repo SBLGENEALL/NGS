@@ -3,11 +3,13 @@
 이 UI는 외부 서버로 데이터를 전송하지 않고 **현재 Linux 워크스테이션 안에서만**
 실행됩니다. 기존 `run_pipeline.sh` 명령줄 방식도 그대로 사용할 수 있습니다.
 
-공개 저장소에는 특정 회사의 이름이나 로고가 포함되지 않습니다. 사내 CI/브랜드
-담당자가 승인한 설정은 프로젝트 루트의 `branding.local.json`과
-`branding_logo.svg`(또는 PNG)에 넣을 수 있으며, 이 파일들은 Git에서 자동 제외됩니다.
-왼쪽 하단 로고는 `branding_sidebar_logo.svg` 또는 `branding_sidebar_logo.png`로 넣습니다.
-`branding.example.json`을 복사해 조직명, 문구 및 색상을 설정할 수 있습니다.
+공개 저장소에는 특정 회사의 이미지 로고를 포함하지 않습니다. 왼쪽 하단에 배경 없는
+text wordmark를 사용하려면 Linux server에서 다음을 한 번 실행합니다. 이 설정 파일은
+Git에서 자동 제외되며 NASCA로 암호화된 이미지가 필요하지 않습니다.
+
+```bash
+./configure_local_branding.sh "SAMSUNG BIOLOGICS" "Jongin Baek"
+```
 
 ## 1. 설치
 
@@ -95,11 +97,14 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 ## 3. Batch analysis (권장)
 
-1. 필요한 reference FASTA를 첫 번째 업로드 영역에 모두 드래그합니다.
+1. `Windows PC에서 업로드` 또는 `Linux server 경로`를 선택합니다. Server 경로를
+   선택하면 FASTA 파일 한 개 또는 FASTA 폴더의 절대경로를 입력하고
+   `서버 Reference 불러오기`를 누릅니다.
 2. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
    `Reference file check`에서 정렬된 파일명과 길이를 확인합니다.
-3. Reference 파일명별로 생성된 영역에 해당 FASTQ 파일 또는 sample 폴더를 그대로
-   드래그합니다. 별도의 입력 형식 선택은 필요하지 않습니다.
+3. Reference별로 Windows 업로드 또는 Linux server 경로를 선택합니다. Server 경로는
+   FASTQ 한 개 또는 sample 하위 폴더를 포함한 상위 폴더를 지정할 수 있습니다.
+   Server FASTQ는 복사하지 않고 원본을 직접 연결하므로 대용량 upload 시간이 없습니다.
 4. 필요하면 `Sample ID 직접 수정`을 켜서 자동 인식된 ONT sample name을 수정합니다.
    여러 FASTQ chunk에 같은 Sample ID를 입력하면 하나의 sample로 합쳐 분석합니다.
 5. `분석 전 최종 확인`에서 reference별 Sample ID와 FASTQ 개수를 확인합니다.

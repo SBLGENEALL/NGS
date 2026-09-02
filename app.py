@@ -16,11 +16,14 @@ from ont_ui.batch import (
     BatchExecutionError,
     BatchPreparationError,
     BatchSettings,
+    ServerPathUpload,
     collect_batch_results,
     natural_key,
     parse_uploaded_reference,
     prepare_batch_job,
     run_batch_job,
+    server_fastq_uploads,
+    server_reference_uploads,
     uploaded_samples,
 )
 from ont_ui.sequences import (
@@ -46,6 +49,30 @@ DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
         "edge_margin": 50,
     },
 }
+
+
+def _remember_server_uploads(
+    state_key: str,
+    uploads: list[ServerPathUpload],
+) -> None:
+    st.session_state[state_key] = [
+        (str(item.source_path), item.name) for item in uploads
+    ]
+
+
+def _restore_server_uploads(state_key: str) -> list[ServerPathUpload]:
+    stored = st.session_state.get(state_key, [])
+    if not isinstance(stored, list):
+        return []
+    restored: list[ServerPathUpload] = []
+    for item in stored:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        try:
+            restored.append(ServerPathUpload(Path(str(item[0])), str(item[1])))
+        except BatchPreparationError:
+            continue
+    return restored
 
 
 def _analysis_settings(mode: str) -> dict[str, object]:
@@ -113,7 +140,15 @@ def _sidebar_brand_logo() -> str:
     ):
         path = REPOSITORY_ROOT / filename
         if path.is_file():
-            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            data = path.read_bytes()
+            valid = (
+                filename.endswith(".png") and data.startswith(b"\x89PNG\r\n\x1a\n")
+            ) or (
+                filename.endswith(".svg") and b"<svg" in data[:2048].lower()
+            )
+            if not valid:
+                continue
+            encoded = base64.b64encode(data).decode("ascii")
             return (
                 f'<img src="data:{mime};base64,{encoded}" '
                 'alt="Organization logo" class="sidebar-brand-logo">'
@@ -499,13 +534,43 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     )
 
     st.markdown("#### 1 · Reference")
-    reference_uploads = st.file_uploader(
-        "이번 run에 사용할 reference 파일을 모두 올리세요",
-        type=["fasta", "fa", "fna", "txt"],
-        accept_multiple_files=True,
-        key="batch_references",
-        help="업로드한 reference 개수와 파일명에 따라 ONT sample 영역이 생성됩니다.",
+    reference_source = st.radio(
+        "Reference 위치",
+        ["Windows PC에서 업로드", "Linux server 경로"],
+        horizontal=True,
+        key="reference_source",
+        help="브라우저 업로드는 Windows 파일을, server 경로는 Linux에 저장된 파일을 사용합니다.",
     )
+    reference_uploads: list[object]
+    if reference_source == "Windows PC에서 업로드":
+        uploaded_references = st.file_uploader(
+            "이번 run에 사용할 reference 파일을 모두 올리세요",
+            type=["fasta", "fa", "fna", "txt"],
+            accept_multiple_files=True,
+            key="batch_references",
+            help="업로드한 reference 개수와 파일명에 따라 ONT sample 영역이 생성됩니다.",
+        )
+        reference_uploads = list(uploaded_references or [])
+    else:
+        reference_server_path = st.text_input(
+            "Reference file 또는 folder의 Linux 경로",
+            placeholder="/data/user/MCET03/04_ONT/references",
+            key="reference_server_path",
+            help="FASTA 한 개 또는 여러 FASTA가 들어 있는 폴더의 절대경로를 입력합니다.",
+        )
+        if st.button(
+            "서버 Reference 불러오기",
+            key="load_server_references",
+            help="입력한 경로를 한 번만 검색해 Reference 목록을 저장합니다.",
+        ):
+            try:
+                loaded_references = list(server_reference_uploads(reference_server_path))
+                _remember_server_uploads("loaded_server_references", loaded_references)
+            except BatchPreparationError as exc:
+                st.error(str(exc))
+        reference_uploads = _restore_server_uploads("loaded_server_references")
+        if reference_uploads:
+            st.success(f"서버에서 Reference {len(reference_uploads)}개를 불러왔습니다.")
     reference_uploads = sorted(
         list(reference_uploads or []),
         key=lambda item: natural_key(
@@ -547,17 +612,51 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     for index, reference_file in enumerate(reference_names, 1):
         reference_label = Path(reference_file).stem
         with st.expander(f"{index} · {reference_label}", expanded=True):
-            uploaded = st.file_uploader(
-                f"{reference_label}의 ONT FASTQ / sample folder",
-                type=["fastq", "fq", "gz"],
-                accept_multiple_files="directory",
-                key=f"batch_reads_{index}_{sanitize_name(reference_label)}",
-                help=(
-                    "FASTQ 파일 또는 FASTQ가 들어 있는 폴더를 드래그합니다. Sample ID는 "
-                    "barcode 번호, 폴더명 또는 FASTQ 파일명에서 자동으로 가져옵니다."
-                ),
+            sample_key = f"{index}_{sanitize_name(reference_label)}"
+            sample_source = st.radio(
+                f"{reference_label}의 ONT sample 위치",
+                ["Windows PC에서 업로드", "Linux server 경로"],
+                horizontal=True,
+                key=f"sample_source_{sample_key}",
+                help="Reference마다 PC 업로드 또는 Linux server folder를 선택할 수 있습니다.",
             )
-            uploaded_files = list(uploaded or [])
+            uploaded_files: list[object] = []
+            if sample_source == "Windows PC에서 업로드":
+                uploaded = st.file_uploader(
+                    f"{reference_label}의 ONT FASTQ / sample folder",
+                    type=["fastq", "fq", "gz"],
+                    accept_multiple_files="directory",
+                    key=f"batch_reads_{sample_key}",
+                    help=(
+                        "FASTQ 파일 또는 FASTQ가 들어 있는 폴더를 드래그합니다. Sample ID는 "
+                        "barcode 번호, 폴더명 또는 FASTQ 파일명에서 자동으로 가져옵니다."
+                    ),
+                )
+                uploaded_files = list(uploaded or [])
+            else:
+                sample_server_path = st.text_input(
+                    f"{reference_label}의 FASTQ file 또는 folder Linux 경로",
+                    placeholder=f"/data/user/MCET03/04_ONT/reads/{reference_label}",
+                    key=f"sample_server_path_{sample_key}",
+                    help=(
+                        "FASTQ 또는 sample별 하위 폴더가 들어 있는 상위 폴더의 절대경로를 입력합니다. "
+                        "파일은 server에서 직접 읽으므로 브라우저 업로드 시간이 들지 않습니다."
+                    ),
+                )
+                state_key = f"loaded_server_fastqs_{sample_key}"
+                if st.button(
+                    "서버 ONT sample 불러오기",
+                    key=f"load_server_fastqs_{sample_key}",
+                    help="입력한 경로를 한 번만 검색해 FASTQ 목록을 저장합니다.",
+                ):
+                    try:
+                        loaded_fastqs = list(server_fastq_uploads(sample_server_path))
+                        _remember_server_uploads(state_key, loaded_fastqs)
+                    except BatchPreparationError as exc:
+                        st.error(str(exc))
+                uploaded_files = _restore_server_uploads(state_key)
+                if uploaded_files:
+                    st.success(f"서버에서 FASTQ {len(uploaded_files)}개를 불러왔습니다.")
             grouped = uploaded_samples(uploaded_files)
 
             if grouped:
@@ -963,9 +1062,8 @@ def _settings_page() -> None:
 def _sidebar() -> dict[str, object]:
     branding = _load_branding()
     logo = _sidebar_brand_logo()
-    fallback_logo = (
-        f'<div class="sidebar-brand-wordmark">{html.escape(branding["organization"])}</div>'
-    )
+    wordmark = html.escape(branding["organization"]).replace(" ", "<br>", 1)
+    fallback_logo = f'<div class="sidebar-brand-wordmark">{wordmark}</div>'
     with st.sidebar:
         st.markdown(
             """
@@ -1005,21 +1103,21 @@ def _sidebar() -> dict[str, object]:
             }
             .sidebar-brand-footer {
                 position:fixed; left:1.5rem; bottom:1rem; width:220px;
-                box-sizing:border-box; z-index:999; padding:10px 12px 8px;
-                background:rgba(255,255,255,.96); border-radius:14px;
-                box-shadow:0 8px 24px rgba(16,25,90,.18);
+                box-sizing:border-box; z-index:999; padding:4px 8px;
+                background:transparent; border:0; box-shadow:none;
             }
             .sidebar-brand-logo {
                 display:block; width:100%; height:52px; object-fit:contain;
                 object-position:center; margin:0 auto;
             }
             .sidebar-brand-wordmark {
-                color:#244092; font:700 17px/1.2 Arial,sans-serif;
-                letter-spacing:.04em; text-align:center; padding:18px 8px 10px;
+                color:#FFFFFF; font:800 18px/1.12 "Segoe UI",Arial,sans-serif;
+                letter-spacing:.08em; text-align:left; padding:0;
+                white-space:pre-line; text-shadow:0 2px 8px rgba(21,27,88,.25);
             }
             .sidebar-brand-credit {
-                color:#667085; font:500 11px/1.35 "Segoe UI",Arial,sans-serif;
-                text-align:center; margin-top:5px;
+                color:rgba(255,255,255,.78); font:500 11px/1.35 "Segoe UI",Arial,sans-serif;
+                text-align:left; margin-top:7px;
             }
             </style>
             """,
