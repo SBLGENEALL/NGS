@@ -77,6 +77,12 @@ cd /data/user/MCET03/04_ONT/NGS_ONT
 ./run_ui.sh
 ```
 
+코드나 branding 설정을 바꾼 뒤 기존 UI를 한 번에 재시작하려면 다음을 사용합니다.
+
+```bash
+./launch_ui.sh --restart
+```
+
 브라우저에서 다음 주소를 엽니다.
 
 ```text

@@ -53,9 +53,43 @@ open_browser() {
     fi
 }
 
+stop_running_ui() {
+    local pid=""
+    if [[ -f "$SCRIPT_DIR/.ont_ui.pid" ]]; then
+        pid="$(tr -cd '0-9' < "$SCRIPT_DIR/.ont_ui.pid")"
+        if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+            pid=""
+        fi
+    fi
+    if [[ -z "$pid" ]] && command -v ss >/dev/null 2>&1; then
+        pid="$(
+            ss -ltnp "sport = :$PORT" 2>/dev/null \
+                | sed -n 's/.*pid=\([0-9]*\).*/\1/p' \
+                | head -1
+        )"
+    fi
+    if [[ -n "$pid" ]]; then
+        echo "Stopping ONT Plasmid Analyzer (PID $pid)..."
+        kill "$pid"
+        for _ in {1..20}; do
+            port_is_open || break
+            sleep 0.25
+        done
+    elif port_is_open; then
+        echo "Port $PORT is in use, but its process could not be identified." >&2
+        return 1
+    fi
+    rm -f "$SCRIPT_DIR/.ont_ui.pid"
+}
+
 ENV_PATH="$(find_environment)"
 export PATH="$ENV_PATH/bin:$PATH"
 export CONDA_PREFIX="$ENV_PATH"
+
+if [[ "$MODE" == "--restart" ]]; then
+    stop_running_ui
+    MODE="--background"
+fi
 
 if port_is_open; then
     echo "ONT Plasmid Analyzer is already running: http://127.0.0.1:$PORT"
