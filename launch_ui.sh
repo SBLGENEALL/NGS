@@ -18,9 +18,13 @@ find_environment() {
         return 1
     fi
     for candidate in \
+        /home/MCET03/conda_envs/NGS_ONT_env \
         /home/MCET03/conda_envs/NGS_env \
+        "$HOME/conda_envs/NGS_ONT_env" \
         "$HOME/conda_envs/NGS_env" \
+        "$HOME/miniconda3/envs/NGS_ONT_env" \
         "$HOME/miniconda3/envs/NGS_env" \
+        "$HOME/anaconda3/envs/NGS_ONT_env" \
         "$HOME/anaconda3/envs/NGS_env" \
         "$HOME/miniconda3/envs/ONT_UI_TEST" \
         "$HOME/anaconda3/envs/ONT_UI_TEST"; do
@@ -33,9 +37,9 @@ find_environment() {
         dirname "$(dirname "$(command -v streamlit)")"
         return 0
     fi
-    echo "Could not find NGS_env or ONT_UI_TEST with streamlit installed." >&2
+    echo "Could not find NGS_ONT_env, NGS_env, or ONT_UI_TEST with streamlit installed." >&2
     echo "Set the environment once, for example:" >&2
-    echo "  ONT_CONDA_ENV=/home/MCET03/conda_envs/NGS_env ./launch_ui.sh" >&2
+    echo "  ONT_CONDA_ENV=/home/MCET03/conda_envs/NGS_ONT_env ./launch_ui.sh" >&2
     return 1
 }
 
