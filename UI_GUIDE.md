@@ -11,18 +11,18 @@
 
 ## 1. 설치
 
-기존 `NGS_env`를 업데이트합니다.
+기존 `NGS_ONT_env`를 업데이트합니다.
 
 ```bash
 cd NGS_ONT
-conda env update -p /home/MCET03/conda_envs/NGS_env -f environment.yml
-conda activate /home/MCET03/conda_envs/NGS_env
+conda env update -p /home/MCET03/conda_envs/NGS_ONT_env -f environment.yml
+conda activate /home/MCET03/conda_envs/NGS_ONT_env
 ```
 
 인터넷이 차단된 사내 서버에서는 로컬 미러만 지정할 수 있습니다.
 
 ```bash
-conda env update -p /home/MCET03/conda_envs/NGS_env --offline --override-channels \
+conda env update -p /home/MCET03/conda_envs/NGS_ONT_env --offline --override-channels \
   -c file:///data/conda_repo/mirror/conda-forge/conda-forge \
   -c file:///data/conda_repo/mirror/bioconda \
   -f environment.yml
@@ -50,22 +50,27 @@ chmod +x launch_ui.sh install_linux_launcher.sh run_ui.sh
 ./install_linux_launcher.sh
 ```
 
-이후 바탕화면의 **ONT Plasmid Analyzer** 아이콘을 클릭하면 `NGS_env` 탐색,
+이후 바탕화면의 **ONT Plasmid Analyzer** 아이콘을 클릭하면 `NGS_ONT_env` 탐색,
 UI 실행 및 브라우저 열기가 자동으로 진행됩니다. 기본 포트는 `8502`입니다.
 
 Windows + WSL 환경에서는 프로젝트의 `Launch_ONT_UI.cmd`를 바탕화면으로 복사한 뒤
 더블클릭합니다. 기본 WSL 프로젝트 경로는 `~/NGS_ONT_batch`입니다.
 
-Windows에서 회사 Linux server에 SSH로 접속하는 환경은
-`Launch_ONT_UI_Remote.cmd.example`을 복사해 `.example`을 제거하고, 파일 안의
-`SERVER_HOST`만 실제 server IP로 변경합니다. 더블클릭하면 SSH tunnel, `NGS_env`,
-UI 및 `localhost:8502` 브라우저가 순서대로 실행됩니다. 열린 SSH 창은 분석 중
-닫지 않아야 합니다.
+Windows에서 회사 Linux server에 SSH로 접속하는 환경은 server에서 다음처럼 실행합니다.
+
+```bash
+chmod +x create_remote_launcher.sh
+./create_remote_launcher.sh <Linux-server-IP>
+```
+
+생성된 `Launch_ONT_UI_Remote.cmd`를 Windows 바탕화면으로 내려받아 더블클릭하면
+SSH tunnel, `NGS_ONT_env`, UI 및 `localhost:8502` 브라우저가 순서대로 실행됩니다.
+열린 SSH 창은 분석 중 닫지 않아야 합니다.
 
 ### 명령어로 실행
 
 ```bash
-conda activate /home/MCET03/conda_envs/NGS_env
+conda activate /home/MCET03/conda_envs/NGS_ONT_env
 cd /data/user/MCET03/04_ONT/NGS_ONT
 ./run_ui.sh
 ```
