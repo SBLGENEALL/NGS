@@ -5,7 +5,7 @@ rem Change SERVER_HOST once, then remove .example from this file name.
 set "SERVER_HOST=CHANGE_TO_LINUX_SERVER_IP"
 set "SERVER_USER=MCET03"
 set "REMOTE_PROJECT=/data/user/MCET03/04_ONT/NGS_ONT"
-set "REMOTE_ENV=/home/MCET03/conda_envs/NGS_env"
+set "REMOTE_ENV=/home/MCET03/conda_envs/NGS_ONT_env"
 set "UI_PORT=8502"
 
 if "%SERVER_HOST%"=="CHANGE_TO_LINUX_SERVER_IP" (
