@@ -88,7 +88,24 @@ def server_reference_uploads(value: str) -> list[ServerPathUpload]:
 
 
 def server_fastq_uploads(value: str) -> list[ServerPathUpload]:
-    """Load FASTQs recursively while retaining relative sample folder names."""
+    """Load passing FASTQs from a standard ONT run folder when available."""
+    raw = (value or "").strip()
+    if raw:
+        root = Path(raw).expanduser().resolve()
+        if root.is_dir() and root.name.casefold() != "fastq_pass":
+            try:
+                pass_dir = next(
+                    (
+                        child
+                        for child in root.iterdir()
+                        if child.is_dir() and child.name.casefold() == "fastq_pass"
+                    ),
+                    None,
+                )
+            except OSError:
+                pass_dir = None
+            if pass_dir is not None:
+                return _server_files(str(pass_dir), FASTQ_SUFFIXES, "ONT FASTQ")
     return _server_files(value, FASTQ_SUFFIXES, "ONT FASTQ")
 
 

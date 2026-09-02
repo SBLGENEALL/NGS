@@ -43,7 +43,7 @@ from ont_ui.sequences import (
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
 SERVER_DATA_ROOT = Path(
-    os.environ.get("ONT_SERVER_ROOT", "/data/user")
+    os.environ.get("ONT_SERVER_ROOT", "/data")
 ).expanduser().resolve()
 SERVER_BROWSER_START = SERVER_DATA_ROOT
 
@@ -351,7 +351,11 @@ def _brand_header() -> None:
         }
         html { color-scheme:light; }
         .stApp { background: linear-gradient(180deg, #F6F8FC 0, #FFFFFF 240px); }
-        #MainMenu, [data-testid="stToolbar"] { visibility:hidden; }
+        #MainMenu { visibility:hidden; }
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="stSidebarCollapseButton"] {
+            visibility:visible !important; display:flex !important; z-index:1002;
+        }
         .brand-shell {
             display:flex; align-items:center; justify-content:space-between; gap:24px;
             padding:22px 28px; border-radius:18px; color:white; margin-bottom:20px;
@@ -1152,6 +1156,16 @@ def _settings_page() -> None:
 
     st.button("← 분석 화면으로", on_click=_close_settings_page)
 
+
+def _sidebar_tool_status() -> None:
+    st.markdown("##### 분석 도구")
+    required = ("minimap2", "samtools", "bcftools", "gzip", "bash")
+    for tool in required:
+        icon = "✅" if shutil.which(tool) else "❌"
+        st.caption(f"{icon} {tool}")
+    nanofilt_icon = "✅" if shutil.which("NanoFilt") else "⚪"
+    st.caption(f"{nanofilt_icon} NanoFilt · optional QC")
+
 def _sidebar() -> dict[str, object]:
     branding = _load_branding()
     logo = _sidebar_brand_logo()
@@ -1238,6 +1252,7 @@ def _sidebar() -> dict[str, object]:
             on_click=_close_settings_page,
             help="분석 화면으로 이동합니다.",
         )
+        _sidebar_tool_status()
 
         st.button(
             "⚙ Analysis settings",

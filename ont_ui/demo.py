@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import io
 import random
 import zipfile
@@ -59,14 +60,14 @@ def _fastq(barcode: str, sequence: str) -> str:
 
 @lru_cache(maxsize=1)
 def build_demo_batch_zip() -> bytes:
-    """Return a ZIP containing five references and fifteen valid barcode FASTQs."""
+    """Return a ZIP with a realistic ONT run tree and fifteen passing FASTQs."""
     output = io.BytesIO()
     mapping_buffer = io.StringIO()
     mapping_writer = csv.writer(mapping_buffer, lineterminator="\n")
-    mapping_writer.writerow(["Barcode", "Reference", "Expected result"])
+    mapping_writer.writerow(["Sample", "Reference", "Expected result"])
 
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        barcode_number = 1
+        sample_number = 1
         for reference_index in range(1, REFERENCE_COUNT + 1):
             rng = random.Random(20260902 + reference_index)
             reference = "".join(rng.choice("ACGT") for _ in range(REFERENCE_LENGTH))
@@ -76,26 +77,38 @@ def build_demo_batch_zip() -> bytes:
                 _wrapped_fasta(reference_name, reference),
             )
             for sample_index in range(1, SAMPLES_PER_REFERENCE + 1):
-                barcode = f"barcode{barcode_number:02d}"
+                sample_name = f"ONT_sample_{sample_number:02d}"
                 sequence, expected = _sample_sequence(reference, sample_index)
                 archive.writestr(
-                    f"demo_reads/{reference_name}/{barcode}.fastq",
-                    _fastq(barcode, sequence),
+                    f"demo_ont_run/fastq_pass/{sample_name}/reads_0001.fastq.gz",
+                    gzip.compress(_fastq(sample_name, sequence).encode("utf-8")),
                 )
                 mapping_writer.writerow(
-                    [barcode, f"{reference_name}.fasta", expected]
+                    [sample_name, f"{reference_name}.fasta", expected]
                 )
-                barcode_number += 1
+                sample_number += 1
+
+        for folder_name in (
+            "fastq_fail",
+            "other_reports",
+            "pod5_fail",
+            "pod5_pass",
+            "pod5_skip",
+        ):
+            archive.writestr(
+                f"demo_ont_run/{folder_name}/README.txt",
+                "Placeholder matching a standard ONT output folder.\n",
+            )
 
         archive.writestr("expected_mapping.csv", mapping_buffer.getvalue())
         archive.writestr(
             "README.txt",
             "ONT Plasmid Analyzer synthetic demo\n"
             "===================================\n\n"
-            "1. Upload all five FASTA files in references/.\n"
-            "2. Five reference-specific upload areas will appear.\n"
-            "3. For each reference, upload its three barcode FASTQ files under demo_reads/.\n"
-            "4. Review the final assignment against expected_mapping.csv.\n"
+            "1. Select references/ in the Reference folder browser.\n"
+            "2. Select demo_ont_run/ in the ONT result folder browser.\n"
+            "3. Assign the samples manually using expected_mapping.csv.\n"
+            "4. Only FASTQ.GZ files below fastq_pass/ are analyzed.\n"
             "5. Run the batch analysis.\n\n"
             "Each reference has three example samples: exact, SNP, and 1-bp insertion.\n"
             "These synthetic sequences are for software testing only.\n",

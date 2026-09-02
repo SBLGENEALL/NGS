@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import random
 import shutil
 import zipfile
@@ -38,9 +39,23 @@ def build_dataset(root: Path) -> None:
     if root.exists():
         shutil.rmtree(root)
     references_dir = root / "references"
-    samples_dir = root / "samples"
+    ont_run_dir = root / "demo_ont_run"
+    fastq_pass_dir = ont_run_dir / "fastq_pass"
     references_dir.mkdir(parents=True)
-    samples_dir.mkdir(parents=True)
+    fastq_pass_dir.mkdir(parents=True)
+    for folder_name in (
+        "fastq_fail",
+        "other_reports",
+        "pod5_fail",
+        "pod5_pass",
+        "pod5_skip",
+    ):
+        folder = ont_run_dir / folder_name
+        folder.mkdir(parents=True)
+        (folder / "README.txt").write_text(
+            "실제 ONT output 구조를 재현하기 위한 placeholder입니다.\n",
+            encoding="utf-8",
+        )
 
     expected_rows: list[dict[str, object]] = []
     for reference_index in range(1, REFERENCE_COUNT + 1):
@@ -51,9 +66,8 @@ def build_dataset(root: Path) -> None:
             wrapped_fasta(reference_name, reference), encoding="utf-8"
         )
 
-        prefix = f"P{reference_index:02d}"
-        sample_variants: list[tuple[str, str, str, str]] = [
-            (f"{prefix}_Control", reference, "None", "Reference match"),
+        sample_variants: list[tuple[str, str, str]] = [
+            (reference, "None", "Reference match"),
         ]
 
         snp_position = 301
@@ -63,7 +77,6 @@ def build_dataset(root: Path) -> None:
         )
         sample_variants.append(
             (
-                f"{prefix}_SNP",
                 snp_sequence,
                 "SNP",
                 f"{snp_position}:{reference[snp_position - 1]}>{snp_alt}",
@@ -72,25 +85,27 @@ def build_dataset(root: Path) -> None:
 
         indel_position = 701
         if reference_index % 2:
-            indel_sample = f"{prefix}_Insertion"
             indel_sequence = reference[:indel_position] + "A" + reference[indel_position:]
             indel_type = "Insertion"
             indel_detail = f"A inserted after reference position {indel_position}"
         else:
-            indel_sample = f"{prefix}_Deletion"
             deleted_base = reference[indel_position - 1]
             indel_sequence = reference[: indel_position - 1] + reference[indel_position:]
             indel_type = "Deletion"
             indel_detail = f"{deleted_base} deleted at reference position {indel_position}"
         sample_variants.append(
-            (indel_sample, indel_sequence, indel_type, indel_detail)
+            (indel_sequence, indel_type, indel_detail)
         )
 
-        for sample_name, sequence, variant_type, expected in sample_variants:
-            sample_dir = samples_dir / reference_name / sample_name
+        for sample_index, (sequence, variant_type, expected) in enumerate(
+            sample_variants, 1
+        ):
+            sample_number = (reference_index - 1) * 3 + sample_index
+            sample_name = f"ONT_sample_{sample_number:02d}"
+            sample_dir = fastq_pass_dir / sample_name
             sample_dir.mkdir(parents=True)
-            (sample_dir / "reads.fastq").write_text(
-                fastq(sample_name, sequence), encoding="utf-8"
+            (sample_dir / "reads_0001.fastq.gz").write_bytes(
+                gzip.compress(fastq(sample_name, sequence).encode("utf-8"), mtime=0)
             )
             expected_rows.append(
                 {
@@ -102,7 +117,11 @@ def build_dataset(root: Path) -> None:
             )
 
     with (root / "expected_variants.csv").open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(expected_rows[0]))
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(expected_rows[0]),
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(expected_rows)
 
@@ -111,11 +130,16 @@ def build_dataset(root: Path) -> None:
 
 이 데이터는 UI와 pipeline 실행 확인을 위한 synthetic sequence입니다.
 
-1. `references` 안의 FASTA 5개를 한 번에 업로드합니다.
-2. 각 reference 영역에 같은 이름의 `samples/demo_plasmid_XX` 폴더를 드래그합니다.
-3. Reference별로 Control, SNP, Insertion 또는 Deletion sample 3개가 감지되는지 확인합니다.
+1. UI의 Reference 탐색기에서 `references` 폴더를 선택합니다.
+2. ONT 결과 탐색기에서 `demo_ont_run` 폴더를 선택합니다.
+3. `expected_variants.csv`를 보고 각 Reference에 ONT sample 3개를 직접 선택합니다.
 4. `Batch analysis 실행`을 누릅니다.
-5. 결과를 `expected_variants.csv`와 비교합니다.
+5. 분석 결과를 `expected_variants.csv`와 비교합니다.
+
+`demo_ont_run`은 실제 ONT output과 비슷하게 `fastq_pass`, `fastq_fail`,
+`other_reports`, `pod5_fail`, `pod5_pass`, `pod5_skip` 폴더로 구성됩니다.
+분석기는 `fastq_pass`의 FASTQ.GZ만 읽습니다. Sample 이름에는 예상 variant를
+표시하지 않았으며 정답은 `expected_variants.csv`에서만 확인할 수 있습니다.
 
 기본 Analysis settings에서 각 sample은 12 reads이므로 minimum depth 10 조건을 통과합니다.
 실제 생물학적 데이터가 아닌 소프트웨어 테스트 전용 데이터입니다.

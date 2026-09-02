@@ -75,6 +75,21 @@ class BatchTests(unittest.TestCase):
             self.assertTrue(staged.is_symlink())
             self.assertEqual(staged.resolve(), reads_path.resolve())
 
+    def test_standard_ont_run_uses_fastq_pass_and_ignores_fastq_fail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "ont_run"
+            pass_sample = run / "fastq_pass" / "Clone_A"
+            fail_sample = run / "fastq_fail" / "Failed_read"
+            pass_sample.mkdir(parents=True)
+            fail_sample.mkdir(parents=True)
+            (pass_sample / "pass.fastq").write_text("@r\nA\n+\nI\n")
+            (fail_sample / "fail.fastq").write_text("@r\nA\n+\nI\n")
+
+            uploads = server_fastq_uploads(str(run))
+
+            self.assertEqual([item.name for item in uploads], ["Clone_A/pass.fastq"])
+            self.assertEqual(list(uploaded_samples(uploads)), ["Clone_A"])
+
     def test_reference_names_use_natural_order(self):
         names = ["demo_plasmid_10.fasta", "demo_plasmid_02.fasta", "demo_plasmid_01.fasta"]
         self.assertEqual(
