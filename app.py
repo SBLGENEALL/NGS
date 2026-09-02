@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import base64
 import html
@@ -24,21 +23,8 @@ from ont_ui.batch import (
     run_batch_job,
     uploaded_samples,
 )
-from ont_ui.models import PipelineRunResult, VariantEvent
-from ont_ui.pipeline import (
-    PipelineExecutionError,
-    PipelinePreparationError,
-    RawAnalysisSettings,
-    find_fastq_files,
-    missing_dependencies,
-    prepare_job,
-    run_job,
-)
-from ont_ui.results import parse_flagstat, parse_vcf_variants, read_depth, variants_csv
 from ont_ui.sequences import (
-    SequenceRecord,
     SequenceValidationError,
-    parse_single_sequence,
     sanitize_name,
 )
 
@@ -53,19 +39,6 @@ DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
         "parallel_jobs": 16,
         "min_length": 500,
         "min_quality": 10,
-        "min_variant_quality": 20.0,
-        "min_variant_depth": 10,
-        "min_af": 0.80,
-        "circular": True,
-        "edge_margin": 50,
-    },
-    "Single-sample ONT analysis": {
-        "threads": min(8, os.cpu_count() or 1),
-        "min_length": 500,
-        "min_read_quality": 10,
-        "caller": "bcftools",
-        "pilon_jar": "",
-        "pilon_mem": "16G",
         "min_variant_quality": 20.0,
         "min_variant_depth": 10,
         "min_af": 0.80,
