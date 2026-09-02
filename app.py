@@ -20,6 +20,7 @@ except (ImportError, ModuleNotFoundError):
 else:
     PYARROW_AVAILABLE = True
 
+from ont_ui.audit import append_usage_event
 from ont_ui.batch import (
     BatchExecutionError,
     BatchPreparationError,
@@ -42,6 +43,7 @@ from ont_ui.sequences import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
+USAGE_LOG_PATH = REPOSITORY_ROOT / "usage_logs" / "analysis_usage.csv"
 SERVER_DATA_ROOT = Path(
     os.environ.get("ONT_SERVER_ROOT", "/data")
 ).expanduser().resolve()
@@ -592,6 +594,13 @@ def _result_status_html(status: str) -> str:
 def _render_batch_results(result: dict[str, object], job) -> None:
     st.divider()
     st.subheader("Batch analysis results")
+    audit = result.get("audit", {})
+    if isinstance(audit, dict) and audit:
+        st.caption(
+            f"Project: {audit.get('project_name', '')} · "
+            f"User: {audit.get('user_name', '')} · "
+            f"Completed: {audit.get('completed_at', '')}"
+        )
     samples = result.get("samples", [])
     assert isinstance(samples, list)
     counts = {
@@ -704,6 +713,23 @@ def _render_batch_results(result: dict[str, object], job) -> None:
 def _batch_ont_tab(settings: dict[str, object]) -> None:
     st.title("Batch analysis")
     st.caption("폴더를 선택한 뒤 각 Reference에 분석할 ONT sample을 직접 지정하세요.")
+
+    identity_columns = st.columns(2)
+    with identity_columns[0]:
+        project_name = st.text_input(
+            "Project name",
+            value=str(settings.get("experiment_name", "")),
+            key="batch_project_name",
+            help="이번 분석을 구분할 프로젝트명을 입력합니다.",
+        ).strip()
+    with identity_columns[1]:
+        user_name = st.text_input(
+            "User name",
+            key="batch_user_name",
+            placeholder="분석자 이름",
+            help="사용 기록에 남길 분석자 이름을 입력합니다.",
+        ).strip()
+    st.caption("분석 시작·완료 시각과 Project/User 정보는 서버 사용 기록에 저장됩니다.")
 
     reference_is_selected = bool(st.session_state.get("reference_browser_selected"))
     with st.expander(
@@ -863,7 +889,11 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         bool(mappings)
         and not validation_errors
         and total_samples > 0
+        and bool(project_name)
+        and bool(user_name)
     )
+    if mappings and (not project_name or not user_name):
+        st.warning("분석을 실행하려면 Project name과 User name을 입력하세요.")
     if st.button(
         f"Batch analysis 실행 ({total_samples} samples)",
         type="primary",
@@ -872,6 +902,19 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         use_container_width=True,
         help="확인한 Reference와 ONT sample 배정대로 분석합니다.",
     ):
+        job = None
+
+        def record_usage(event: str) -> str:
+            return append_usage_event(
+                USAGE_LOG_PATH,
+                event=event,
+                project_name=project_name,
+                user_name=user_name,
+                reference_count=len(mappings),
+                analysis_count=total_samples,
+                job_id=job.job_dir.name if job is not None else "",
+            )
+
         try:
             missing_tools = [
                 executable
@@ -883,7 +926,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     "필수 분석 프로그램이 없습니다: " + ", ".join(missing_tools)
                 )
             batch_settings = BatchSettings(
-                experiment_name=str(settings["experiment_name"]),
+                experiment_name=project_name,
                 threads=int(settings["threads"]),
                 parallel_jobs=int(settings["parallel_jobs"]),
                 min_read_length=int(settings["min_length"]),
@@ -902,6 +945,12 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     mappings,
                     batch_settings,
                 )
+            try:
+                record_usage("STARTED")
+            except OSError as exc:
+                raise BatchPreparationError(
+                    "사용 기록을 저장할 수 없어 분석을 시작하지 못했습니다."
+                ) from exc
             progress_box = st.empty()
             progress_box.progress(0.0, text=f"완료 0 / {job.sample_count} samples")
             completed = 0
@@ -918,11 +967,29 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             with st.spinner("Batch analysis를 실행하고 있습니다. 브라우저를 닫지 마세요…"):
                 run_batch_job(REPOSITORY_ROOT, job, on_line=show_line)
                 result = collect_batch_results(job)
+            try:
+                completed_at = record_usage("COMPLETED")
+            except OSError:
+                completed_at = "기록 저장 실패"
+                st.warning("분석은 완료됐지만 사용 기록을 저장하지 못했습니다.")
+            result["audit"] = {
+                "project_name": project_name,
+                "user_name": user_name,
+                "completed_at": completed_at,
+            }
             progress_box.success(f"{job.sample_count} samples 분석을 완료했습니다.")
             st.session_state["batch_result"] = {"job": job, "result": result}
         except BatchExecutionError:
+            try:
+                record_usage("FAILED")
+            except OSError:
+                pass
             st.error("분석 실행 중 오류가 발생했습니다. 입력 파일과 설정을 확인하세요.")
         except (BatchPreparationError, SequenceValidationError, OSError) as exc:
+            try:
+                record_usage("FAILED")
+            except OSError:
+                pass
             st.error(str(exc))
 
     batch_state = st.session_state.get("batch_result")

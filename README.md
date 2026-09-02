@@ -20,6 +20,11 @@ conda activate NGS_ONT_env
 표시되며, 각 `?` 도움말에 커서를 올리면 설명을
 확인할 수 있습니다. 앱은 일관된 light theme와 브랜드 그라데이션 sidebar를 사용합니다.
 
+회사 Windows PC에서는 `ONT_Plasmid_Analyzer_One_Click.bat`을 더블클릭하면
+MobaXterm 탐색, SSH tunnel, `NGS_ONT_env`, Streamlit 재시작 및
+`http://127.0.0.1:18502` 열기가 한 번에 진행됩니다. Server 쪽 실행 설정은
+`ont_one_click.sh`에 모아 두었습니다.
+
 **Batch analysis**는 `/data` 하위에서 이동할 수 있는 folder browser를 제공합니다.
 Reference 폴더와 ONT 결과 상위 폴더를 각각 선택하면 FASTA와 FASTQ를 검색합니다.
 이름이나 순서에 따른 자동 연결은 하지 않으며, 각 Reference에 분석할 ONT sample을
@@ -31,6 +36,10 @@ Reference 폴더와 ONT 결과 상위 폴더를 각각 선택하면 FASTA와 FAS
 연결합니다. 기본 read QC는 `500 bp / Q10`이며 coverage가 부족할 때만
 `300 bp / Q8` 완화를 고려합니다. 설치·화면·결과 해석은
 [`UI_GUIDE.md`](UI_GUIDE.md)를 참고하세요.
+
+분석 화면에서 입력한 Project name, User name과 KST 시작·완료·실패 시각은
+`usage_logs/analysis_usage.csv`에 기록됩니다. `.bat`으로 실제 UI를 시작한 시각과
+Windows 사용자명은 `usage_logs/ui_access.log`에 남습니다.
 
 
 ## 핵심 아이디어: 폴더명 기반 자동 매칭

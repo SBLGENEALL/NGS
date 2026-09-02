@@ -1,0 +1,42 @@
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class OneClickLauncherTests(unittest.TestCase):
+    def test_windows_launcher_has_required_one_click_steps(self):
+        text = (ROOT / "ONT_Plasmid_Analyzer_One_Click.bat").read_text(
+            encoding="utf-8"
+        )
+        for expected in (
+            "182.198.164.21",
+            "MCET03",
+            "18502",
+            "MobaXterm",
+            "-newtab",
+            "ont_one_click.sh",
+            "Invoke-WebRequest",
+            "start \"\" \"%UI_URL%\"",
+        ):
+            self.assertIn(expected, text)
+        self.assertNotIn("“", text)
+        self.assertNotIn("”", text)
+
+    def test_server_launcher_uses_expected_environment_and_data_root(self):
+        text = (ROOT / "ont_one_click.sh").read_text(encoding="utf-8")
+        for expected in (
+            "/home/mcet/anaconda3",
+            "/home/MCET03/conda_envs/NGS_ONT_env",
+            "UI_ADDRESS=\"${ONT_UI_ADDRESS:-127.0.0.1}\"",
+            "UI_PORT=\"${ONT_UI_PORT:-8502}\"",
+            "SERVER_ROOT=\"${ONT_SERVER_ROOT:-/data}\"",
+            "./launch_ui.sh --restart",
+            "usage_logs/ui_access.log",
+        ):
+            self.assertIn(expected, text)
+
+
+if __name__ == "__main__":
+    unittest.main()

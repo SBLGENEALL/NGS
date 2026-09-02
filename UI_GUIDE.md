@@ -58,15 +58,17 @@ UI 실행 및 브라우저 열기가 자동으로 진행됩니다. 기본 포트
 Windows + WSL 환경에서는 프로젝트의 `Launch_ONT_UI.cmd`를 바탕화면으로 복사한 뒤
 더블클릭합니다. 기본 WSL 프로젝트 경로는 `~/NGS_ONT_batch`입니다.
 
-Windows에서 회사 Linux server에 SSH로 접속하는 환경은 server에서 다음처럼 실행합니다.
+Windows에서 회사 Linux server에 접속할 때는 server에서 최초 한 번 다음을 실행합니다.
 
 ```bash
-chmod +x create_remote_launcher.sh
-./create_remote_launcher.sh <Linux-server-IP>
+chmod +x ont_one_click.sh launch_ui.sh run_ui.sh run_pipeline.sh
 ```
 
-생성된 `Launch_ONT_UI_Remote.cmd`를 Windows 바탕화면으로 내려받아 더블클릭하면
-SSH tunnel, `NGS_ONT_env`, UI 및 `localhost:8502` 브라우저가 순서대로 실행됩니다.
+그다음 `ONT_Plasmid_Analyzer_One_Click.bat`을 Windows 바탕화면으로 내려받습니다. 이 파일은
+MobaXterm 설치 위치를 자동으로 찾고, 기존 tunnel이 정상이면 브라우저만 즉시 엽니다.
+Tunnel이 없으면 기존 MobaXterm 창에 SSH tab을 추가하거나 MobaXterm을 새로 시작한 뒤,
+server의 `ont_one_click.sh`로 환경 활성화와 Streamlit 재시작을 수행합니다. Windows에서
+표시되는 주소는 `http://127.0.0.1:18502`입니다.
 열린 SSH 창은 분석 중 닫지 않아야 합니다.
 
 ### 명령어로 실행
@@ -103,6 +105,9 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 ## 3. Batch analysis (권장)
 
+먼저 화면 상단에 이번 분석의 `Project name`과 `User name`을 입력합니다. 두 항목은
+분석 실행에 필수이며 결과 화면과 server 사용 기록에 남습니다.
+
 1. `Reference 폴더 탐색`에서 폴더 버튼을 눌러 이동하고, FASTA가 들어 있는 폴더에서
    `이 폴더 사용`을 누릅니다. 탐색 시작 위치와 최상위 범위는 `/data`입니다.
 2. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
@@ -134,6 +139,12 @@ chart가 자동 활성화되며, 어느 경우에도 variant calling 결과에�
 내려받을 수 있고 BAM, VCF, consensus FASTA 및 보고서는 서버 결과 폴더에 남습니다.
 실행 command, 상세 log, 서버 결과 경로는 UI에 표시되지 않습니다. 관리자 진단을 위한
 log 파일은 서버 실행 폴더에 계속 보존됩니다.
+
+별도의 command 출력 없이 다음 사용 기록이 server에 저장됩니다.
+
+- `usage_logs/analysis_usage.csv`: KST timestamp, STARTED/COMPLETED/FAILED,
+  Project name, User name, Reference 수, 분석 조합 수, job ID
+- `usage_logs/ui_access.log`: `.bat`을 통해 UI를 실제 시작한 timestamp와 Windows 사용자명
 
 Sample ID는 `barcode13` 같은 번호, ONT sample alias 폴더명 또는 FASTQ 파일명에서
 자동으로 가져옵니다. 따라서 barcode라는 이름을 반드시 사용할 필요가 없습니다.

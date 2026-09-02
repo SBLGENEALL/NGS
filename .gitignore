@@ -20,3 +20,6 @@ branding_sidebar_logo.png
 .ont_ui.pid
 ui_launcher.log
 Launch_ONT_UI_Remote.cmd
+
+# Local audit records (generated at runtime)
+usage_logs/
