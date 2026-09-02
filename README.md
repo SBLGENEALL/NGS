@@ -10,8 +10,8 @@ Oxford Nanopore MinION으로 시퀀싱한 결과(fastq)를 reference FASTA(벡�
 Chrome/Edge로 서버 주소에 접속합니다.
 
 ```bash
-conda env update -n NGS_env -f environment.yml
-conda activate NGS_env
+conda env update -n NGS_ONT_env -f environment.yml
+conda activate NGS_ONT_env
 ./run_ui.sh
 ```
 
