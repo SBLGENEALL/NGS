@@ -97,9 +97,9 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 ## 3. Batch analysis (권장)
 
-1. `Windows PC에서 업로드` 또는 `Linux server 경로`를 선택합니다. Server 경로를
-   선택하면 FASTA 파일 한 개 또는 FASTA 폴더의 절대경로를 입력하고
-   `서버 Reference 불러오기`를 누릅니다.
+1. Windows Explorer 또는 MobaXterm SFTP에서 필요한 Reference FASTA를 한 개의
+   drag-and-drop 영역으로 모두 올립니다. Reference는 크기가 작아 브라우저 업로드를
+   사용하고, 대용량 ONT FASTQ만 Linux server 경로 기능을 사용합니다.
 2. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
    `Reference file check`에서 정렬된 파일명과 길이를 확인합니다.
 3. Reference별로 Windows 업로드 또는 Linux server 경로를 선택합니다. Server 경로는

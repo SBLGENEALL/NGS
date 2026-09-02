@@ -23,7 +23,6 @@ from ont_ui.batch import (
     prepare_batch_job,
     run_batch_job,
     server_fastq_uploads,
-    server_reference_uploads,
     uploaded_samples,
 )
 from ont_ui.sequences import (
@@ -534,43 +533,21 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     )
 
     st.markdown("#### 1 · Reference")
-    reference_source = st.radio(
-        "Reference 위치",
-        ["Windows PC에서 업로드", "Linux server 경로"],
-        horizontal=True,
-        key="reference_source",
-        help="브라우저 업로드는 Windows 파일을, server 경로는 Linux에 저장된 파일을 사용합니다.",
+    st.caption(
+        "Windows Explorer 또는 MobaXterm SFTP의 Reference FASTA를 아래 영역으로 "
+        "그대로 드래그하세요."
     )
-    reference_uploads: list[object]
-    if reference_source == "Windows PC에서 업로드":
-        uploaded_references = st.file_uploader(
-            "이번 run에 사용할 reference 파일을 모두 올리세요",
-            type=["fasta", "fa", "fna", "txt"],
-            accept_multiple_files=True,
-            key="batch_references",
-            help="업로드한 reference 개수와 파일명에 따라 ONT sample 영역이 생성됩니다.",
-        )
-        reference_uploads = list(uploaded_references or [])
-    else:
-        reference_server_path = st.text_input(
-            "Reference file 또는 folder의 Linux 경로",
-            placeholder="/data/user/MCET03/04_ONT/references",
-            key="reference_server_path",
-            help="FASTA 한 개 또는 여러 FASTA가 들어 있는 폴더의 절대경로를 입력합니다.",
-        )
-        if st.button(
-            "서버 Reference 불러오기",
-            key="load_server_references",
-            help="입력한 경로를 한 번만 검색해 Reference 목록을 저장합니다.",
-        ):
-            try:
-                loaded_references = list(server_reference_uploads(reference_server_path))
-                _remember_server_uploads("loaded_server_references", loaded_references)
-            except BatchPreparationError as exc:
-                st.error(str(exc))
-        reference_uploads = _restore_server_uploads("loaded_server_references")
-        if reference_uploads:
-            st.success(f"서버에서 Reference {len(reference_uploads)}개를 불러왔습니다.")
+    uploaded_references = st.file_uploader(
+        "이번 run에 사용할 Reference 파일을 모두 올리세요",
+        type=["fasta", "fa", "fna", "txt"],
+        accept_multiple_files=True,
+        key="batch_references",
+        help=(
+            "여러 FASTA를 한 번에 드래그할 수 있습니다. 업로드된 파일 개수와 "
+            "이름에 따라 ONT sample 영역이 자동으로 생성됩니다."
+        ),
+    )
+    reference_uploads: list[object] = list(uploaded_references or [])
     reference_uploads = sorted(
         list(reference_uploads or []),
         key=lambda item: natural_key(
@@ -578,6 +555,14 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         ),
     )
     reference_names = [Path(item.name).name for item in reference_uploads]
+    reference_signature = tuple(
+        (Path(str(getattr(item, "name", ""))).name, int(getattr(item, "size", 0)))
+        for item in reference_uploads
+    )
+    previous_signature = st.session_state.get("batch_reference_signature")
+    if previous_signature != reference_signature:
+        st.session_state["batch_reference_signature"] = reference_signature
+        st.session_state.pop("batch_result", None)
 
     validation_errors: list[str] = []
     reference_rows: list[dict[str, object]] = []
