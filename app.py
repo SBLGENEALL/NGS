@@ -25,7 +25,6 @@ from ont_ui.batch import (
     BatchPreparationError,
     BatchSettings,
     ServerPathUpload,
-    balanced_sample_assignment,
     collect_batch_results,
     natural_key,
     parse_uploaded_reference,
@@ -44,17 +43,9 @@ from ont_ui.sequences import (
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
 SERVER_DATA_ROOT = Path(
-    os.environ.get("ONT_SERVER_ROOT", "/")
+    os.environ.get("ONT_SERVER_ROOT", "/data/user")
 ).expanduser().resolve()
-_default_server_start = Path(
-    os.environ.get("ONT_SERVER_START", "/data/user/MCET03")
-).expanduser().resolve()
-SERVER_BROWSER_START = (
-    _default_server_start
-    if _default_server_start.is_dir()
-    and _default_server_start.is_relative_to(SERVER_DATA_ROOT)
-    else SERVER_DATA_ROOT
-)
+SERVER_BROWSER_START = SERVER_DATA_ROOT
 
 DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
     "Batch analysis": {
@@ -708,7 +699,7 @@ def _render_batch_results(result: dict[str, object], job) -> None:
 
 def _batch_ont_tab(settings: dict[str, object]) -> None:
     st.title("Batch analysis")
-    st.caption("Reference 폴더와 ONT 결과 폴더를 선택하면 sample을 이름순으로 자동 배정합니다.")
+    st.caption("폴더를 선택한 뒤 각 Reference에 분석할 ONT sample을 직접 지정하세요.")
 
     reference_is_selected = bool(st.session_state.get("reference_browser_selected"))
     with st.expander(
@@ -814,26 +805,22 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         st.success(f"ONT sample {len(grouped_reads)}개 선택 완료")
 
     mappings: list[dict[str, object]] = []
-    assignment_rows: list[dict[str, object]] = []
-
     selected_by_reference: dict[str, list[str]] = {}
     if reference_uploads and grouped_reads:
-        automatic = balanced_sample_assignment(reference_names, detected_sample_ids)
-        st.success(
-            f"자동 배정 완료 · Reference {len(reference_names)}개 / ONT sample {len(detected_sample_ids)}개"
-        )
-        with st.expander("자동 배정 수정", expanded=False):
-            st.caption(
-                "Reference와 sample을 이름순으로 균등 배정했습니다. 필요한 경우에만 바꾸세요."
-            )
-            for index, reference_file in enumerate(reference_names, 1):
+        st.markdown("### 3 · Reference별 ONT sample 선택")
+        st.caption("이름이나 순서를 추정하지 않습니다. 분석할 조합을 직접 선택하세요.")
+        assignment_columns = st.columns(2)
+        for index, reference_file in enumerate(reference_names, 1):
+            with assignment_columns[(index - 1) % 2]:
                 reference_label = Path(reference_file).stem
                 selected_ids = st.multiselect(
                     reference_label,
                     options=detected_sample_ids,
-                    default=automatic.get(reference_file, []),
                     key=f"assignment_{index}_{sanitize_name(reference_file, str(index))}",
-                    help="이 Reference와 비교할 ONT sample을 선택합니다.",
+                    help=(
+                        "이 Reference와 비교할 ONT sample을 직접 선택합니다. "
+                        "한 sample을 여러 Reference에 선택해도 됩니다."
+                    ),
                     placeholder="ONT sample 선택",
                 )
                 selected_by_reference[reference_file] = list(selected_ids)
@@ -845,21 +832,6 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     if st.session_state.get("batch_assignment_signature") != assignment_signature:
         st.session_state["batch_assignment_signature"] = assignment_signature
         st.session_state.pop("batch_result", None)
-
-    owners: dict[str, list[str]] = {}
-    for reference_file, sample_ids in selected_by_reference.items():
-        for sample_id in sample_ids:
-            owners.setdefault(sample_id, []).append(reference_file)
-    duplicated_ids = sorted(
-        (sample_id for sample_id, refs in owners.items() if len(refs) > 1),
-        key=natural_key,
-    )
-    if duplicated_ids:
-        validation_errors.append(
-            "같은 ONT sample은 한 Reference에만 배정할 수 있습니다: "
-            + ", ".join(duplicated_ids)
-        )
-        st.error(validation_errors[-1])
 
     for reference_file in reference_names:
         sample_ids = selected_by_reference.get(reference_file, [])
@@ -874,34 +846,18 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                 ],
             }
         )
-        assignment_rows.append(
-            {
-                "Reference": reference_file,
-                "Samples": len(sample_ids),
-                "Sample ID": ", ".join(sample_ids),
-                "FASTQ files": sum(len(grouped_reads[item]) for item in sample_ids),
-            }
+
+    total_samples = sum(
+        len(sample_ids) for sample_ids in selected_by_reference.values()
+    )
+    if total_samples:
+        st.success(
+            f"분석 조합 {total_samples}개 선택 완료 · Reference {len(mappings)}개"
         )
 
-    assigned_ids = set(owners)
-    unassigned_ids = [
-        sample_id for sample_id in detected_sample_ids if sample_id not in assigned_ids
-    ]
-    if unassigned_ids:
-        st.warning(f"배정되지 않은 ONT sample이 {len(unassigned_ids)}개 있습니다.")
-
-    total_samples = sum(int(row["Samples"]) for row in assignment_rows)
-
-    every_reference_has_reads = (
-        bool(reference_uploads) and len(mappings) == len(reference_uploads)
-    )
-    if reference_uploads and grouped_reads and not every_reference_has_reads:
-        st.warning("ONT sample이 배정되지 않은 Reference가 있습니다.")
-
     can_run = (
-        every_reference_has_reads
+        bool(mappings)
         and not validation_errors
-        and not duplicated_ids
         and total_samples > 0
     )
     if st.button(

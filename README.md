@@ -20,10 +20,10 @@ conda activate NGS_ONT_env
 표시되며, 각 `?` 도움말에 커서를 올리면 설명을
 확인할 수 있습니다. 앱은 일관된 light theme와 브랜드 그라데이션 sidebar를 사용합니다.
 
-**Batch analysis**는 server 전체에서 이동할 수 있는 folder browser를 제공합니다.
-Reference 폴더와 ONT 결과 상위 폴더를 각각 선택하면 FASTA와 FASTQ를 자동 검색하고,
-이름순으로 sample 수를 균등 배정합니다. 배정 변경이 필요할 때만 접힌
-`자동 배정 수정`을 열면 됩니다.
+**Batch analysis**는 `/data/user` 하위에서 이동할 수 있는 folder browser를 제공합니다.
+Reference 폴더와 ONT 결과 상위 폴더를 각각 선택하면 FASTA와 FASTQ를 검색합니다.
+이름이나 순서에 따른 자동 연결은 하지 않으며, 각 Reference에 분석할 ONT sample을
+사용자가 직접 선택합니다. 한 sample을 여러 Reference와 비교하는 것도 가능합니다.
 `barcode13`뿐 아니라 MinKNOW에서 지정한 sample alias와 FASTQ 파일명도 Sample ID로
 인식합니다. 대용량 FASTQ는 browser로 전송하거나 복사하지 않고 server에서 직접
 연결합니다. 기본 read QC는 `500 bp / Q10`이며 coverage가 부족할 때만

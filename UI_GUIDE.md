@@ -104,16 +104,15 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 ## 3. Batch analysis (권장)
 
 1. `Reference 폴더 탐색`에서 폴더 버튼을 눌러 이동하고, FASTA가 들어 있는 폴더에서
-   `이 폴더 사용`을 누릅니다. 시작 위치는 `/data/user/MCET03`이지만 `상위` 버튼으로
-   server의 다른 위치까지 이동할 수 있습니다.
+   `이 폴더 사용`을 누릅니다. 탐색 시작 위치와 최상위 범위는 `/data/user`입니다.
 2. Reference는 파일명 기준 자연 정렬되며(예: `01, 02, ..., 10`),
    필요할 때만 접힌 `Reference 확인`에서 파일명과 길이를 확인합니다.
 3. `ONT 결과 폴더 탐색`에서 sample 하위 폴더가 들어 있는 상위 폴더를 선택합니다.
    FASTQ/FASTQ.GZ는 하위 폴더까지 자동 검색하며 원본을 직접 연결합니다.
-4. Reference와 ONT sample은 이름순으로 균등하게 자동 배정됩니다. 예를 들어
-   Reference 5개와 sample 15개이면 Reference마다 sample 3개씩 연결됩니다.
-   변경할 때만 `자동 배정 수정`을 엽니다. 같은 sample을 두 Reference에 중복 배정하면
-   실행할 수 없습니다.
+4. `Reference별 ONT sample 선택`에서 분석할 조합을 직접 지정합니다. 이름이나 순서를
+   기준으로 자동 배정하지 않습니다. Reference마다 sample 수를 다르게 선택할 수 있고,
+   같은 sample을 여러 Reference와 비교할 수도 있습니다. 선택하지 않은 Reference와
+   ONT sample은 이번 분석에서 제외됩니다.
 5. 왼쪽 하단의 `Analysis settings` 버튼을 누르면 중앙에 나타나는 설정 화면에서
    CPU, 병렬 sample 수, read filter 및 variant review 기준을 저장할 수 있습니다.
 6. 중복·누락 경고가 없는지 확인한 뒤 `Batch analysis 실행`을 누릅니다.
@@ -133,8 +132,8 @@ log 파일은 서버 실행 폴더에 계속 보존됩니다.
 Sample ID는 `barcode13` 같은 번호, ONT sample alias 폴더명 또는 FASTQ 파일명에서
 자동으로 가져옵니다. 따라서 barcode라는 이름을 반드시 사용할 필요가 없습니다.
 
-> 보안을 위해 탐색 범위를 제한해야 할 때만 UI 실행 전에 `ONT_SERVER_ROOT`
-> 환경변수를 지정합니다. 기본값은 server 전체이며 시작 위치는 `/data/user/MCET03`입니다.
+> 기본 탐색 범위는 `/data/user`입니다. 다른 범위가 꼭 필요한 경우에만 UI 실행 전에
+> `ONT_SERVER_ROOT` 환경변수를 지정합니다.
 
 ## 4. 결과 위치
 

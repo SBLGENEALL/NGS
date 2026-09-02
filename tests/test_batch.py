@@ -7,7 +7,6 @@ from pathlib import Path
 from ont_ui.batch import (
     BatchPreparationError,
     BatchSettings,
-    balanced_sample_assignment,
     barcode_from_upload_name,
     natural_key,
     prepare_batch_job,
@@ -29,28 +28,6 @@ class Upload(io.BytesIO):
 
 
 class BatchTests(unittest.TestCase):
-    def test_balanced_sample_assignment_groups_natural_order(self):
-        assignments = balanced_sample_assignment(
-            ["plasmid_02.fasta", "plasmid_01.fasta"],
-            ["barcode04", "barcode02", "barcode03", "barcode01"],
-        )
-        self.assertEqual(
-            assignments,
-            {
-                "plasmid_01.fasta": ["barcode01", "barcode02"],
-                "plasmid_02.fasta": ["barcode03", "barcode04"],
-            },
-        )
-
-    def test_balanced_sample_assignment_allows_uneven_counts(self):
-        assignments = balanced_sample_assignment(
-            ["a.fasta", "b.fasta", "c.fasta"],
-            ["S1", "S2", "S3", "S4"],
-        )
-        self.assertEqual(assignments["a.fasta"], ["S1", "S2"])
-        self.assertEqual(assignments["b.fasta"], ["S3"])
-        self.assertEqual(assignments["c.fasta"], ["S4"])
-
     def test_server_paths_load_references_and_group_sample_folders(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -155,6 +132,34 @@ class BatchTests(unittest.TestCase):
             manifest = json.loads(job.manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["samples"][0]["sample_id"], "Clone_A")
             self.assertIn("Clone_A", manifest["samples"][0]["sample_name"])
+
+    def test_same_sample_can_be_compared_to_multiple_references(self):
+        references = [
+            Upload("reference_a.fasta", b">a\nACGTACGT\n"),
+            Upload("reference_b.fasta", b">b\nACGTACGT\n"),
+        ]
+        reads = [Upload("Clone_A/reads.fastq", b"@r\nACGT\n+\nIIII\n")]
+        mappings = [
+            {
+                "reference": reference.name,
+                "samples": [{"name": "Clone_A", "files": reads}],
+            }
+            for reference in references
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            job = prepare_batch_job(
+                Path(tmp), references, reads, mappings, BatchSettings("multi_ref")
+            )
+            manifest = json.loads(job.manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(job.sample_count, 2)
+            self.assertEqual(
+                [sample["reference_file"] for sample in manifest["samples"]],
+                ["reference_a.fasta", "reference_b.fasta"],
+            )
+            self.assertEqual(
+                [sample["sample_id"] for sample in manifest["samples"]],
+                ["Clone_A", "Clone_A"],
+            )
 
     def test_prepare_three_replicates_for_one_reference(self):
         reference = Upload("C-5.pPB-161.fasta", b">ref\nACGTACGT\n")
