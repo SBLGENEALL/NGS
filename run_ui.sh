@@ -16,4 +16,6 @@ exec streamlit run "$SCRIPT_DIR/app.py" \
     --server.port "$PORT" \
     --server.maxUploadSize "$MAX_UPLOAD_MB" \
     --server.headless true \
+    --server.fileWatcherType none \
+    --server.runOnSave false \
     --browser.gatherUsageStats false
