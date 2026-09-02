@@ -121,6 +121,10 @@ ONT_UI_ADDRESS=127.0.0.1 ./run_ui.sh
 
 각 입력 항목의 `?`에 커서를 올리면 설정 의미와 권장 사용법을 확인할 수 있습니다.
 
+Offline 환경에서 `pyarrow`와 `arrow-cpp`가 호환되지 않으면 UI는 자동으로 HTML
+table을 사용합니다. Pyarrow가 정상 import되는 환경에서는 interactive table과 depth
+chart가 자동 활성화되며, 어느 경우에도 variant calling 결과에는 차이가 없습니다.
+
 결과는 reference별로 연결된 sample이 묶여 표시되며 `CLEAN`,
 `VARIANT DETECTED`, `REVIEW`, `ERROR` 상태를 제공합니다. 전체 결과 요약은 CSV로
 내려받을 수 있고 BAM, VCF, consensus FASTA 및 보고서는 서버 결과 폴더에 남습니다.

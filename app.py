@@ -12,6 +12,13 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+try:
+    import pyarrow  # noqa: F401
+except (ImportError, ModuleNotFoundError):
+    PYARROW_AVAILABLE = False
+else:
+    PYARROW_AVAILABLE = True
+
 from ont_ui.batch import (
     BatchExecutionError,
     BatchPreparationError,
@@ -49,6 +56,34 @@ DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
         "edge_margin": 50,
     },
 }
+
+
+def _display_table(frame: pd.DataFrame) -> None:
+    """Render a table without making pyarrow mandatory in offline installs."""
+    if PYARROW_AVAILABLE:
+        try:
+            st.dataframe(frame, use_container_width=True, hide_index=True)
+            return
+        except (ImportError, ModuleNotFoundError):
+            pass
+    st.markdown(
+        """
+        <style>
+        .ont-html-table { overflow-x:auto; margin:.25rem 0 1rem; }
+        .ont-html-table table { width:100%; border-collapse:collapse; font-size:.88rem; }
+        .ont-html-table th { background:#F5F7FC; color:#24324A; font-weight:650; }
+        .ont-html-table th, .ont-html-table td {
+            border:1px solid #E2E7F0; padding:.48rem .58rem; text-align:left;
+            vertical-align:top;
+        }
+        .ont-html-table tr:nth-child(even) td { background:#FAFBFD; }
+        </style>
+        """
+        + '<div class="ont-html-table">'
+        + frame.to_html(index=False, escape=True, na_rep="")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _remember_server_uploads(
@@ -337,11 +372,17 @@ def _render_raw_result(state: dict[str, object]) -> None:
     if chart_points:
         st.markdown("#### Depth across reference")
         depth_frame = pd.DataFrame(chart_points, columns=["Position", "Depth"]).set_index("Position")
-        st.line_chart(depth_frame)
+        if PYARROW_AVAILABLE:
+            st.line_chart(depth_frame)
+        else:
+            st.caption(
+                "현재 offline 환경의 pyarrow가 호환되지 않아 depth chart는 생략합니다. "
+                "Mean depth와 coverage 결과에는 영향이 없습니다."
+            )
 
     st.markdown("#### Variant calls")
     if events:
-        st.dataframe(_variants_frame(events), use_container_width=True, hide_index=True)
+        _display_table(_variants_frame(events))
     elif vcf_path.is_file():
         st.success("No variant was called against the reference.")
     else:
@@ -440,16 +481,18 @@ def _render_batch_results(result: dict[str, object], job) -> None:
             }
         )
     if summary_rows:
-        st.dataframe(
-            pd.DataFrame(summary_rows),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Mapping rate (%)": st.column_config.NumberColumn(format="%.2f%%"),
-                "Coverage ≥1× (%)": st.column_config.NumberColumn(format="%.2f%%"),
-                "Mean depth": st.column_config.NumberColumn(format="%.1f×"),
-            },
-        )
+        summary_frame = pd.DataFrame(summary_rows)
+        for column, suffix, decimals in (
+            ("Mapping rate (%)", "%", 2),
+            ("Coverage ≥1× (%)", "%", 2),
+            ("Mean depth", "×", 1),
+        ):
+            summary_frame[column] = summary_frame[column].map(
+                lambda value, s=suffix, d=decimals: ""
+                if pd.isna(value)
+                else f"{float(value):.{d}f}{s}"
+            )
+        _display_table(summary_frame)
     st.download_button(
         "Download complete summary (CSV)",
         data=str(result.get("summary_csv", "")).encode("utf-8-sig"),
@@ -508,9 +551,7 @@ def _render_batch_results(result: dict[str, object], job) -> None:
                         )
                         details = sample.get("variant_details", [])
                         if details:
-                            st.dataframe(
-                                pd.DataFrame(details), hide_index=True, use_container_width=True
-                            )
+                            _display_table(pd.DataFrame(details))
     log_path = job.job_dir / "pipeline.log"
     if log_path.is_file():
         with st.expander("Analysis log · 필요할 때만 열기", expanded=False):
@@ -588,7 +629,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             st.success(
                 f"서버 Reference {len(server_reference_files)}개를 불러왔습니다."
             )
-            st.dataframe(
+            _display_table(
                 pd.DataFrame(
                     {
                         "Server Reference": [
@@ -596,9 +637,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                         ],
                         "Path": [str(item.source_path) for item in server_reference_files],
                     }
-                ),
-                hide_index=True,
-                use_container_width=True,
+                )
             )
 
     reference_uploads: list[object] = [
@@ -636,7 +675,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
 
     if reference_uploads:
         with st.expander("Reference file check", expanded=True):
-            st.dataframe(pd.DataFrame(reference_rows), hide_index=True, use_container_width=True)
+            _display_table(pd.DataFrame(reference_rows))
     for error in validation_errors:
         st.error(error)
 
@@ -727,21 +766,33 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     editor_key_suffix = abs(
                         hash(tuple(str(getattr(item, "name", "")) for item in uploaded_files))
                     )
-                    edited_rows = st.data_editor(
-                        editor_rows,
-                        hide_index=True,
-                        use_container_width=True,
-                        disabled=["Detected input", "FASTQ files"],
-                        key=(
-                            f"sample_ids_{index}_{sanitize_name(reference_label)}_"
-                            f"{editor_key_suffix}"
-                        ),
-                        column_config={
-                            "Sample ID": st.column_config.TextColumn(
-                                help="결과에 표시할 ONT sample name입니다.", required=True
+                    if PYARROW_AVAILABLE:
+                        edited_rows = st.data_editor(
+                            editor_rows,
+                            hide_index=True,
+                            use_container_width=True,
+                            disabled=["Detected input", "FASTQ files"],
+                            key=(
+                                f"sample_ids_{index}_{sanitize_name(reference_label)}_"
+                                f"{editor_key_suffix}"
+                            ),
+                            column_config={
+                                "Sample ID": st.column_config.TextColumn(
+                                    help="결과에 표시할 ONT sample name입니다.", required=True
+                                )
+                            },
+                        )
+                    else:
+                        edited_rows = editor_rows.copy()
+                        for row_number, row in edited_rows.iterrows():
+                            edited_rows.at[row_number, "Sample ID"] = st.text_input(
+                                f"{row['Detected input']} → Sample ID",
+                                value=str(row["Sample ID"]),
+                                key=(
+                                    f"sample_id_text_{index}_{row_number}_"
+                                    f"{editor_key_suffix}"
+                                ),
                             )
-                        },
-                    )
                 renamed_groups: dict[str, list[object]] = {}
                 for row in edited_rows.to_dict("records"):
                     detected_id = str(row["Detected input"])
@@ -779,11 +830,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
 
     if assignment_rows:
         st.markdown("#### 3 · 분석 전 최종 확인")
-        st.dataframe(
-            pd.DataFrame(assignment_rows),
-            hide_index=True,
-            use_container_width=True,
-        )
+        _display_table(pd.DataFrame(assignment_rows))
 
     total_samples = sum(int(row["Samples"]) for row in assignment_rows)
     metrics = st.columns(3)
