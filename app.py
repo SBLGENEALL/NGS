@@ -729,8 +729,8 @@ def _render_batch_results(result: dict[str, object], job) -> None:
     with st.expander(
         "Intermediate QC 및 결과 파일",
         expanded=False,
-        help="Sample 하나를 선택해 1/6~6/6 상태와 중간 결과를 확인합니다.",
     ):
+        st.caption("Sample 하나를 선택하면 1/6~6/6 진행 상태와 중간 결과를 확인할 수 있습니다.")
         if not samples:
             st.info("표시할 분석 결과가 없습니다.")
             return
