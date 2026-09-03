@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Callable, Sequence
 
+from .fastq_qc import load_fastq_qc
 from .results import (
     parse_consensus_fallback_variants,
     parse_flagstat,
@@ -502,11 +503,55 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
         flagstat = sample_dir / f"{sample_name}.flagstat.txt"
         depth_file = sample_dir / f"{sample_name}.depth.txt"
         vcf = sample_dir / f"{sample_name}.vcf.gz"
+        fastq_qc = load_fastq_qc(sample_dir / f"{sample_name}.fastq_qc.json")
+        merged_qc = fastq_qc.get("merged")
+        filtered_qc = fastq_qc.get("filtered")
+        if not isinstance(merged_qc, dict):
+            merged_qc = {}
+        if not isinstance(filtered_qc, dict):
+            filtered_qc = {}
+        effective_qc = filtered_qc or merged_qc
+        merged_reads = int(merged_qc.get("reads", 0) or 0)
+        filtered_reads = int(filtered_qc.get("reads", 0) or 0) if filtered_qc else None
+        retained_fraction = (
+            filtered_reads / merged_reads
+            if filtered_reads is not None and merged_reads > 0
+            else None
+        )
+        read_n50 = int(effective_qc.get("n50", 0) or 0) or None
+        mean_read_quality = (
+            float(effective_qc.get("mean_read_quality", 0) or 0)
+            if effective_qc
+            else None
+        )
+        q10_read_fraction = (
+            float(effective_qc.get("q10_read_fraction", 0) or 0)
+            if effective_qc
+            else None
+        )
+        q20_read_fraction = (
+            float(effective_qc.get("q20_read_fraction", 0) or 0)
+            if effective_qc
+            else None
+        )
+        q30_read_fraction = (
+            float(effective_qc.get("q30_read_fraction", 0) or 0)
+            if effective_qc
+            else None
+        )
         if not flagstat.is_file() or not depth_file.is_file():
             samples.append(
                 {
                     **item,
                     "status": "ERROR",
+                    "merged_reads": merged_reads or None,
+                    "filtered_reads": filtered_reads,
+                    "retained_fraction": retained_fraction,
+                    "read_n50": read_n50,
+                    "mean_read_quality": mean_read_quality,
+                    "q10_read_fraction": q10_read_fraction,
+                    "q20_read_fraction": q20_read_fraction,
+                    "q30_read_fraction": q30_read_fraction,
                     "message": (
                         "Mapping 결과가 생성되지 않았습니다. Pipeline log에서 해당 "
                         "sample의 [SKIP] 또는 error 메시지를 확인하세요."
@@ -559,6 +604,14 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
                 "mean_depth": depth.mean_depth,
                 "coverage_1x": depth.coverage_1x,
                 "coverage_10x": depth.coverage_10x,
+                "merged_reads": merged_reads or None,
+                "filtered_reads": filtered_reads,
+                "retained_fraction": retained_fraction,
+                "read_n50": read_n50,
+                "mean_read_quality": mean_read_quality,
+                "q10_read_fraction": q10_read_fraction,
+                "q20_read_fraction": q20_read_fraction,
+                "q30_read_fraction": q30_read_fraction,
                 "variants": len(events),
                 "pass_variants": passed,
                 "review_variants": review,
@@ -572,7 +625,9 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
 
     columns = [
         "Reference", "Sample #", "Sample ID", "Output name", "Status", "Total reads",
-        "Mapping rate", "Mean depth", "Coverage 1x", "Coverage 10x", "Variants",
+        "Merged reads", "Filtered reads", "Read retention", "Read N50", "Mean read Q",
+        "Q10 reads", "Q20 reads", "Q30 reads", "Mapping rate", "Mean depth",
+        "Coverage 1x", "Coverage 10x", "Variants",
         "PASS variants", "REVIEW variants", "SNP", "Insertion", "Deletion",
     ]
     output = io.StringIO()
@@ -587,6 +642,14 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
                 "Output name": sample.get("sample_name"),
                 "Status": sample.get("status"),
                 "Total reads": sample.get("total_reads"),
+                "Merged reads": sample.get("merged_reads"),
+                "Filtered reads": sample.get("filtered_reads"),
+                "Read retention": sample.get("retained_fraction"),
+                "Read N50": sample.get("read_n50"),
+                "Mean read Q": sample.get("mean_read_quality"),
+                "Q10 reads": sample.get("q10_read_fraction"),
+                "Q20 reads": sample.get("q20_read_fraction"),
+                "Q30 reads": sample.get("q30_read_fraction"),
                 "Mapping rate": sample.get("mapping_rate"),
                 "Mean depth": sample.get("mean_depth"),
                 "Coverage 1x": sample.get("coverage_1x"),

@@ -139,7 +139,12 @@ consensus 기반 결과라는 안내가 함께 표시되며, 실제 판정 전�
 확인하는 것이 좋습니다.
 
 분석 완료 후 `Intermediate QC 및 결과 파일`을 열고 sample 하나를 선택하면 1/6~6/6
-완료 상태, Mapping rate, Mean depth, Coverage 및 mutation 수를 확인할 수 있습니다.
+완료 상태뿐 아니라 단계별 핵심 결과도 확인할 수 있습니다. Merge/QC 단계에는 read 수,
+Read N50, mean read Q, Q≥30 read 비율과 filter 통과율이 표시되고, Mapping 단계에는
+mapping rate, Mean depth, ≥10× coverage가 표시됩니다. Raw consensus는 길이와 N base 수,
+Variant calling은 SNP/INS/DEL 및 PASS/REVIEW 수, Final result는 consensus 길이와 최종
+판정을 보여줍니다. 이 값은 `<sample>.fastq_qc.json`에 한 번 계산해 저장하므로 UI를
+새로고침할 때 대용량 FASTQ를 다시 읽지 않습니다.
 Raw/Final consensus, Primary VCF, QC report는 바로 받을 수 있습니다. FASTQ, BAM/index,
 depth 등 전체 중간 산출물은 `Complete results ZIP 준비`를 눌렀을 때만 묶이므로 평소에는
 대규모 batch의 UI 속도에 영향을 주지 않습니다.

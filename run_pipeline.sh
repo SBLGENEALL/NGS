@@ -272,9 +272,10 @@ process_one() {
 
     # 2. Optional QC filtering with NanoFilt
     local READS_FOR_MAPPING="$MERGED_FASTQ"
+    local FILTERED_FASTQ=""
     if [[ "$MIN_LEN" -gt 0 || "$MIN_QUAL" -gt 0 ]]; then
         if command -v NanoFilt >/dev/null 2>&1; then
-            local FILTERED_FASTQ="$SAMPLE_DIR/${REF_NAME}.filtered.fastq.gz"
+            FILTERED_FASTQ="$SAMPLE_DIR/${REF_NAME}.filtered.fastq.gz"
             echo "$LOG [2/6] QC filtering (length>=$MIN_LEN, quality>=$MIN_QUAL) -> $(basename "$FILTERED_FASTQ")"
             zcat "$MERGED_FASTQ" | NanoFilt -l "$MIN_LEN" -q "$MIN_QUAL" | gzip > "$FILTERED_FASTQ"
             READS_FOR_MAPPING="$FILTERED_FASTQ"
@@ -283,6 +284,22 @@ process_one() {
         fi
     else
         echo "$LOG [2/6] QC filtering disabled"
+    fi
+
+    # Persist compact read-QC metrics once so Streamlit never has to rescan a
+    # large FASTQ on every page refresh.
+    local FASTQ_QC_JSON="$SAMPLE_DIR/${REF_NAME}.fastq_qc.json"
+    local FASTQ_QC_ARGS=(
+        --merged "$MERGED_FASTQ"
+        --output "$FASTQ_QC_JSON"
+    )
+    if [[ -n "$FILTERED_FASTQ" && -s "$FILTERED_FASTQ" ]]; then
+        FASTQ_QC_ARGS+=(--filtered "$FILTERED_FASTQ")
+    fi
+    if python "$SCRIPT_DIR/ont_ui/fastq_qc.py" "${FASTQ_QC_ARGS[@]}"; then
+        echo "$LOG [2/6] Read QC summary -> $(basename "$FASTQ_QC_JSON")"
+    else
+        echo "$LOG [2/6] WARNING: Read QC summary could not be generated" >&2
     fi
 
     # 3. Map to reference with minimap2, sort/index with samtools

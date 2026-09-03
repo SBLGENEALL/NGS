@@ -36,6 +36,7 @@ from ont_ui.batch import (
     server_reference_uploads,
     uploaded_samples,
 )
+from ont_ui.fastq_qc import load_fastq_qc
 from ont_ui.sequences import (
     SequenceValidationError,
     sanitize_name,
@@ -456,6 +457,24 @@ def _artifact_path(sample_dir: Path, sample_name: str, suffix: str) -> Path:
     return sample_dir / f"{sample_name}{suffix}"
 
 
+def _fasta_length_and_n(path: Path) -> tuple[int, int]:
+    if not path.is_file():
+        return 0, 0
+    sequence = "".join(
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith(">")
+    )
+    return len(sequence), sequence.upper().count("N")
+
+
+def _percent(value: object, digits: int = 1) -> str:
+    try:
+        return f"{float(value):.{digits}%}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
 def _download_file_button(label: str, path: Path, mime: str, key: str) -> None:
     if not path.is_file():
         return
@@ -485,6 +504,29 @@ def _sample_stage_rows(
     vcf = sample_dir / f"{name}.vcf.gz"
     final_consensus = sample_dir / f"{name}.consensus.fasta"
     report = sample_dir / f"{name}_report.md"
+    qc_summary = load_fastq_qc(sample_dir / f"{name}.fastq_qc.json")
+    merged_qc = qc_summary.get("merged")
+    filtered_qc = qc_summary.get("filtered")
+    if not isinstance(merged_qc, dict):
+        merged_qc = {}
+    if not isinstance(filtered_qc, dict):
+        filtered_qc = {}
+    merged_reads = int(merged_qc.get("reads", sample.get("merged_reads", 0)) or 0)
+    filtered_reads_raw = filtered_qc.get("reads", sample.get("filtered_reads"))
+    filtered_reads = int(filtered_reads_raw) if filtered_reads_raw is not None else None
+    retained = (
+        filtered_reads / merged_reads
+        if filtered_reads is not None and merged_reads > 0
+        else sample.get("retained_fraction")
+    )
+    effective_qc = filtered_qc or merged_qc
+    merged_n50 = int(merged_qc.get("n50", sample.get("read_n50", 0)) or 0)
+    merged_mean_q = float(
+        merged_qc.get("mean_read_quality", sample.get("mean_read_quality", 0)) or 0
+    )
+    q30 = effective_qc.get("q30_read_fraction", sample.get("q30_read_fraction"))
+    raw_length, raw_n = _fasta_length_and_n(raw_consensus)
+    final_length, _ = _fasta_length_and_n(final_consensus)
     qc_requested = (
         int(pipeline_settings.get("min_read_length", 0) or 0) > 0
         or int(pipeline_settings.get("min_read_quality", 0) or 0) > 0
@@ -495,43 +537,72 @@ def _sample_stage_rows(
         if filtered.is_file()
         else ("NanoFilt 미적용" if qc_requested else "QC filter 비활성화")
     )
-    variant_count = int(sample.get("variants", 0) or 0)
     source = str(sample.get("variant_source", "bcftools"))
     return [
         {
             "Step": "1/6 · Merge reads",
-            "Status": "✅ Complete" if merged.is_file() else "❌ Missing",
-            "Check": f"Input FASTQ {int(sample.get('input_file_count', 0) or 0)}개",
+            "상태": "✅ Complete" if merged.is_file() else "❌ Missing",
+            "핵심 결과": (
+                f"FASTQ {int(sample.get('input_file_count', 0) or 0)}개 → "
+                f"{merged_reads:,} reads · N50 {merged_n50:,} bp · Mean Q {merged_mean_q:.1f}"
+                if merged_reads
+                else f"Input FASTQ {int(sample.get('input_file_count', 0) or 0)}개"
+            ),
         },
-        {"Step": "2/6 · QC filtering", "Status": qc_state, "Check": qc_detail},
+        {
+            "Step": "2/6 · QC filtering",
+            "상태": qc_state,
+            "핵심 결과": (
+                f"{filtered_reads:,}/{merged_reads:,} reads retained ({_percent(retained)}) · "
+                f"Q≥30 reads {_percent(q30)}"
+                if filtered_reads is not None and merged_reads
+                else qc_detail
+            ),
+        },
         {
             "Step": "3/6 · Mapping",
-            "Status": "✅ Complete"
+            "상태": "✅ Complete"
             if all(path.is_file() for path in (bam, bai, flagstat, depth))
             else "❌ Incomplete",
-            "Check": (
+            "핵심 결과": (
+                f"{int(sample.get('total_reads', 0) or 0):,} reads · "
                 f"Mapping {float(sample['mapping_rate']):.1%} · "
-                f"Mean depth {float(sample.get('mean_depth', 0)):.1f}×"
+                f"Mean depth {float(sample.get('mean_depth', 0)):.1f}× · "
+                f"Coverage ≥10× {float(sample.get('coverage_10x', 0)):.1%}"
                 if sample.get("mapping_rate") is not None
                 else "Mapping 결과 없음"
             ),
         },
         {
             "Step": "4/6 · Raw consensus",
-            "Status": "✅ Complete" if raw_consensus.is_file() else "❌ Missing",
-            "Check": "samtools consensus",
+            "상태": "✅ Complete" if raw_consensus.is_file() else "❌ Missing",
+            "핵심 결과": (
+                f"{raw_length:,} bp · N base {raw_n:,}개"
+                if raw_length
+                else "Raw consensus 없음"
+            ),
         },
         {
             "Step": "5/6 · Variant calling",
-            "Status": "✅ Complete" if vcf.is_file() else "❌ Missing",
-            "Check": f"{variant_count} mutation · {source}",
+            "상태": "✅ Complete" if vcf.is_file() else "❌ Missing",
+            "핵심 결과": (
+                f"SNP {int(sample.get('snp', 0) or 0)} · "
+                f"INS {int(sample.get('insertion', 0) or 0)} · "
+                f"DEL {int(sample.get('deletion', 0) or 0)} · "
+                f"PASS {int(sample.get('pass_variants', 0) or 0)} / "
+                f"REVIEW {int(sample.get('review_variants', 0) or 0)} · {source}"
+            ),
         },
         {
             "Step": "6/6 · Final result",
-            "Status": "✅ Complete"
+            "상태": "✅ Complete"
             if final_consensus.is_file() and report.is_file()
             else "❌ Incomplete",
-            "Check": str(sample.get("status", "")),
+            "핵심 결과": (
+                f"Final consensus {final_length:,} bp · 판정 {sample.get('status', '')}"
+                if final_length
+                else "Final consensus 또는 report 없음"
+            ),
         },
     ]
 
@@ -750,13 +821,44 @@ def _render_batch_results(result: dict[str, object], job) -> None:
         )
         sample = sample_options[selected_label]
         st.markdown(_result_status_html(str(sample.get("status"))), unsafe_allow_html=True)
-        if sample.get("status") == "ERROR":
-            st.error("분석 결과를 생성하지 못했습니다. 입력 파일과 설정을 확인하세요.")
-            return
-
         result_root = result.get("result_root")
         sample_name = str(sample.get("sample_name", "sample"))
         sample_dir = Path(result_root) / sample_name if result_root else Path("/__missing__")
+
+        st.markdown("#### Read QC")
+        read_qc_metrics = st.columns(5)
+        merged_reads = sample.get("merged_reads")
+        filtered_reads = sample.get("filtered_reads")
+        retained_fraction = sample.get("retained_fraction")
+        read_n50 = sample.get("read_n50")
+        mean_read_quality = sample.get("mean_read_quality")
+        q10_fraction = sample.get("q10_read_fraction")
+        q20_fraction = sample.get("q20_read_fraction")
+        q30_fraction = sample.get("q30_read_fraction")
+        read_qc_metrics[0].metric(
+            "Merged reads", f"{int(merged_reads):,}" if merged_reads is not None else "N/A"
+        )
+        read_qc_metrics[1].metric(
+            "Filtered reads", f"{int(filtered_reads):,}" if filtered_reads is not None else "Skipped"
+        )
+        read_qc_metrics[2].metric(
+            "Retained", _percent(retained_fraction) if retained_fraction is not None else "N/A"
+        )
+        read_qc_metrics[3].metric(
+            "Read N50", f"{int(read_n50):,} bp" if read_n50 is not None else "N/A"
+        )
+        read_qc_metrics[4].metric(
+            "Mean read Q",
+            f"{float(mean_read_quality):.1f}" if mean_read_quality is not None else "N/A",
+        )
+        st.caption(
+            "Read quality distribution · "
+            f"Q≥10 {_percent(q10_fraction)} · "
+            f"Q≥20 {_percent(q20_fraction)} · "
+            f"Q≥30 {_percent(q30_fraction)}"
+        )
+
+        st.markdown("#### Mapping 및 mutation summary")
         qc_metrics = st.columns(4)
         mapping_rate = sample.get("mapping_rate")
         qc_metrics[0].metric(
@@ -770,9 +872,17 @@ def _render_batch_results(result: dict[str, object], job) -> None:
         pipeline_settings = result.get("pipeline_settings", {})
         if not isinstance(pipeline_settings, dict):
             pipeline_settings = {}
+        st.markdown("#### 6-step analysis summary")
         _display_table(
             pd.DataFrame(_sample_stage_rows(sample_dir, sample, pipeline_settings))
         )
+
+        if sample.get("status") == "ERROR":
+            st.error(
+                "분석이 중단되었습니다. 위 표에서 마지막으로 생성된 단계와 "
+                "처음 Missing/Incomplete인 단계를 확인하세요."
+            )
+            return
 
         st.write(
             f"SNP **{sample.get('snp', 0)}** · "
