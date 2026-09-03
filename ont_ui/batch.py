@@ -5,10 +5,12 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
 import uuid
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -35,6 +37,47 @@ class BatchPreparationError(ValueError):
 
 class BatchExecutionError(RuntimeError):
     pass
+
+
+def build_sample_results_zip(sample_dir: Path, destination: Path) -> Path:
+    """Create an on-demand ZIP containing every regular sample result file."""
+    sample_dir = sample_dir.expanduser().resolve()
+    if not sample_dir.is_dir():
+        raise BatchPreparationError("분석 결과 폴더를 찾을 수 없습니다.")
+    files = sorted(
+        path
+        for path in sample_dir.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    )
+    if not files:
+        raise BatchPreparationError("다운로드할 분석 결과 파일이 없습니다.")
+
+    destination = destination.expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".tmp")
+    try:
+        with zipfile.ZipFile(temporary, "w") as archive:
+            archive.writestr(
+                "README.txt",
+                "ONT Plasmid Analyzer complete sample results\n"
+                "Includes merged/filtered reads, BAM/index, depth, QC, raw/final "
+                "consensus, VCF/index, and report files when generated.\n",
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            for path in files:
+                relative = Path(sample_dir.name) / path.relative_to(sample_dir)
+                lower = path.name.casefold()
+                compression = (
+                    zipfile.ZIP_STORED
+                    if lower.endswith((".gz", ".bam", ".bai", ".csi", ".zip"))
+                    else zipfile.ZIP_DEFLATED
+                )
+                archive.write(path, relative.as_posix(), compress_type=compression)
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return destination
 
 
 class ServerPathUpload:
@@ -375,6 +418,7 @@ def prepare_batch_job(
                     "replicate": replicate,
                     "sample_name": sample_name,
                     "reference_length": len(record.sequence),
+                    "input_file_count": len(sample_files),
                 }
             )
 
@@ -392,6 +436,10 @@ def prepare_batch_job(
                     "min_af": settings.min_allele_fraction,
                     "circular": settings.circular,
                     "edge_margin": settings.edge_margin if settings.circular else 0,
+                },
+                "pipeline_settings": {
+                    "min_read_length": settings.min_read_length,
+                    "min_read_quality": settings.min_read_quality,
                 },
                 "samples": manifest_samples,
             },
@@ -559,4 +607,5 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
         "groups": groups,
         "summary_csv": output.getvalue(),
         "result_root": result_root,
+        "pipeline_settings": manifest.get("pipeline_settings", {}),
     }

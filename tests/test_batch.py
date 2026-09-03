@@ -2,12 +2,14 @@ import io
 import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from ont_ui.batch import (
     BatchPreparationError,
     BatchSettings,
     barcode_from_upload_name,
+    build_sample_results_zip,
     natural_key,
     prepare_batch_job,
     server_fastq_uploads,
@@ -201,6 +203,8 @@ class BatchTests(unittest.TestCase):
             self.assertEqual(manifest["thresholds"]["min_quality"], 20.0)
             self.assertEqual(manifest["thresholds"]["min_depth"], 10)
             self.assertEqual(manifest["thresholds"]["min_af"], 0.8)
+            self.assertEqual(manifest["pipeline_settings"]["min_read_length"], 500)
+            self.assertEqual(manifest["pipeline_settings"]["min_read_quality"], 10)
             self.assertEqual(
                 [sample["barcode"] for sample in manifest["samples"]],
                 ["barcode13", "barcode14", "barcode15"],
@@ -215,6 +219,31 @@ class BatchTests(unittest.TestCase):
                 )
                 self.assertEqual(len(links), 1)
                 self.assertTrue(links[0].is_symlink())
+                self.assertEqual(sample["input_file_count"], 1)
+
+    def test_complete_result_zip_is_created_only_from_regular_result_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sample_dir = root / "sample_a"
+            sample_dir.mkdir()
+            (sample_dir / "sample_a.sorted.bam").write_bytes(b"bam")
+            (sample_dir / "sample_a.depth.txt").write_text(
+                "ref\t1\t12\n", encoding="utf-8"
+            )
+            external = root / "external.fastq.gz"
+            external.write_bytes(b"external")
+            (sample_dir / "linked.fastq.gz").symlink_to(external)
+
+            destination = root / "downloads" / "complete.zip"
+            created = build_sample_results_zip(sample_dir, destination)
+
+            self.assertEqual(created, destination.resolve())
+            with zipfile.ZipFile(created) as archive:
+                names = archive.namelist()
+                self.assertIn("README.txt", names)
+                self.assertIn("sample_a/sample_a.sorted.bam", names)
+                self.assertIn("sample_a/sample_a.depth.txt", names)
+                self.assertNotIn("sample_a/linked.fastq.gz", names)
 
     def test_duplicate_barcode_is_rejected(self):
         references = [

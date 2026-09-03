@@ -138,6 +138,12 @@ Primary bcftools VCF에 call이 없지만 samtools consensus와 Reference 사이
 consensus 기반 결과라는 안내가 함께 표시되며, 실제 판정 전에는 원본 read와 depth를
 확인하는 것이 좋습니다.
 
+분석 완료 후 `Intermediate QC 및 결과 파일`을 열고 sample 하나를 선택하면 1/6~6/6
+완료 상태, Mapping rate, Mean depth, Coverage 및 mutation 수를 확인할 수 있습니다.
+Raw/Final consensus, Primary VCF, QC report는 바로 받을 수 있습니다. FASTQ, BAM/index,
+depth 등 전체 중간 산출물은 `Complete results ZIP 준비`를 눌렀을 때만 묶이므로 평소에는
+대규모 batch의 UI 속도에 영향을 주지 않습니다.
+
 Offline 환경에서 `pyarrow`와 `arrow-cpp`가 호환되지 않으면 UI는 자동으로 Markdown
 table을 사용합니다. Pyarrow가 정상 import되는 환경에서는 interactive table과 depth
 chart가 자동 활성화되며, 어느 경우에도 variant calling 결과에는 차이가 없습니다.

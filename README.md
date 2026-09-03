@@ -45,6 +45,10 @@ Variant calling은 설치된 bcftools가 지원하면 `ont-sup` profile을 사�
 구버전에서는 indel calling을 유지하는 호환 옵션을 사용하며, primary VCF가 비어도
 samtools consensus에서 Reference와 차이가 확인되면 해당 mutation을 `REVIEW`로 표시합니다.
 
+분석 결과의 `Intermediate QC 및 결과 파일`은 기본적으로 접혀 있습니다. Sample 하나를
+선택하면 Merge, QC, Mapping, Raw consensus, Variant calling, Final result의 6단계 상태와
+핵심 QC만 표시합니다. 대용량 전체 결과는 요청할 때만 sample별 ZIP으로 생성합니다.
+
 
 ## 핵심 아이디어: 폴더명 기반 자동 매칭
 

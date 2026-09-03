@@ -26,6 +26,7 @@ from ont_ui.batch import (
     BatchPreparationError,
     BatchSettings,
     ServerPathUpload,
+    build_sample_results_zip,
     collect_batch_results,
     natural_key,
     parse_uploaded_reference,
@@ -468,6 +469,73 @@ def _download_file_button(label: str, path: Path, mime: str, key: str) -> None:
     )
 
 
+def _sample_stage_rows(
+    sample_dir: Path,
+    sample: dict[str, object],
+    pipeline_settings: dict[str, object],
+) -> list[dict[str, str]]:
+    name = str(sample.get("sample_name", "sample"))
+    merged = sample_dir / f"{name}.merged.fastq.gz"
+    filtered = sample_dir / f"{name}.filtered.fastq.gz"
+    bam = sample_dir / f"{name}.sorted.bam"
+    bai = sample_dir / f"{name}.sorted.bam.bai"
+    flagstat = sample_dir / f"{name}.flagstat.txt"
+    depth = sample_dir / f"{name}.depth.txt"
+    raw_consensus = sample_dir / f"{name}.samtools.consensus.fasta"
+    vcf = sample_dir / f"{name}.vcf.gz"
+    final_consensus = sample_dir / f"{name}.consensus.fasta"
+    report = sample_dir / f"{name}_report.md"
+    qc_requested = (
+        int(pipeline_settings.get("min_read_length", 0) or 0) > 0
+        or int(pipeline_settings.get("min_read_quality", 0) or 0) > 0
+    )
+    qc_state = "✅ Complete" if filtered.is_file() else "➖ Skipped"
+    qc_detail = (
+        "Filtered FASTQ 생성"
+        if filtered.is_file()
+        else ("NanoFilt 미적용" if qc_requested else "QC filter 비활성화")
+    )
+    variant_count = int(sample.get("variants", 0) or 0)
+    source = str(sample.get("variant_source", "bcftools"))
+    return [
+        {
+            "Step": "1/6 · Merge reads",
+            "Status": "✅ Complete" if merged.is_file() else "❌ Missing",
+            "Check": f"Input FASTQ {int(sample.get('input_file_count', 0) or 0)}개",
+        },
+        {"Step": "2/6 · QC filtering", "Status": qc_state, "Check": qc_detail},
+        {
+            "Step": "3/6 · Mapping",
+            "Status": "✅ Complete"
+            if all(path.is_file() for path in (bam, bai, flagstat, depth))
+            else "❌ Incomplete",
+            "Check": (
+                f"Mapping {float(sample['mapping_rate']):.1%} · "
+                f"Mean depth {float(sample.get('mean_depth', 0)):.1f}×"
+                if sample.get("mapping_rate") is not None
+                else "Mapping 결과 없음"
+            ),
+        },
+        {
+            "Step": "4/6 · Raw consensus",
+            "Status": "✅ Complete" if raw_consensus.is_file() else "❌ Missing",
+            "Check": "samtools consensus",
+        },
+        {
+            "Step": "5/6 · Variant calling",
+            "Status": "✅ Complete" if vcf.is_file() else "❌ Missing",
+            "Check": f"{variant_count} mutation · {source}",
+        },
+        {
+            "Step": "6/6 · Final result",
+            "Status": "✅ Complete"
+            if final_consensus.is_file() and report.is_file()
+            else "❌ Incomplete",
+            "Check": str(sample.get("status", "")),
+        },
+    ]
+
+
 def _render_raw_result(state: dict[str, object]) -> None:
     run = state["run"]
     reference = state["reference"]
@@ -658,61 +726,131 @@ def _render_batch_results(result: dict[str, object], job) -> None:
         mime="text/csv",
         type="primary",
     )
-    groups = result.get("groups", {})
-    assert isinstance(groups, dict)
-    show_details = st.checkbox(
-        "Reference별 상세 결과 표시",
-        value=False,
-        key=f"show_batch_details_{job.job_dir.name}",
-        help="필요할 때만 상세 결과 card와 variant table을 생성해 화면 속도를 유지합니다.",
-    )
-    if show_details:
-        st.markdown("#### Reference-by-reference review")
-    else:
-        groups = {}
-    for reference_name, group_samples in groups.items():
-        assert isinstance(group_samples, list)
-        labels = ", ".join(
-            f"{sample.get('sample_id', sample.get('barcode'))}: {sample.get('status')}"
-            for sample in group_samples
+    with st.expander(
+        "Intermediate QC 및 결과 파일",
+        expanded=False,
+        help="Sample 하나를 선택해 1/6~6/6 상태와 중간 결과를 확인합니다.",
+    ):
+        if not samples:
+            st.info("표시할 분석 결과가 없습니다.")
+            return
+        sample_options = {
+            (
+                f"{sample.get('reference_name')} · "
+                f"{sample.get('sample_id', sample.get('barcode'))} · "
+                f"{sample.get('status')}"
+            ): sample
+            for sample in samples
+        }
+        selected_label = st.selectbox(
+            "Sample 선택",
+            options=list(sample_options),
+            key=f"intermediate_sample_{job.job_dir.name}",
+            help="선택한 sample만 표시하여 대규모 batch에서도 UI 속도를 유지합니다.",
         )
-        with st.expander(f"{reference_name}  ·  {labels}"):
-            for start in range(0, len(group_samples), 3):
-                sample_row = group_samples[start : start + 3]
-                columns = st.columns(len(sample_row))
-                for column, sample in zip(columns, sample_row):
-                    with column:
-                        st.markdown(
-                            _result_status_html(str(sample.get("status"))),
-                            unsafe_allow_html=True,
-                        )
-                        st.write(
-                            f"**{sample.get('sample_id', sample.get('barcode'))} · "
-                            f"Sample {sample.get('replicate')}**"
-                        )
-                        if sample.get("status") == "ERROR":
-                            st.error("분석 결과를 생성하지 못했습니다. 입력 파일과 설정을 확인하세요.")
-                            continue
-                        mapping_rate = sample.get("mapping_rate")
-                        st.metric(
-                            "Mapping",
-                            f"{float(mapping_rate):.1%}"
-                            if mapping_rate is not None
-                            else "N/A",
-                        )
-                        st.metric("Mean depth", f"{float(sample.get('mean_depth', 0)):.1f}×")
-                        st.write(
-                            f"SNP **{sample.get('snp', 0)}** · INS **{sample.get('insertion', 0)}** · "
-                            f"DEL **{sample.get('deletion', 0)}**"
-                        )
-                        if sample.get("variant_source") == "samtools consensus review":
-                            st.caption(
-                                "Primary VCF에는 없지만 consensus 비교에서 확인된 "
-                                "mutation이므로 REVIEW로 표시했습니다."
-                            )
-                        details = sample.get("variant_details", [])
-                        if details:
-                            _display_table(pd.DataFrame(details))
+        sample = sample_options[selected_label]
+        st.markdown(_result_status_html(str(sample.get("status"))), unsafe_allow_html=True)
+        if sample.get("status") == "ERROR":
+            st.error("분석 결과를 생성하지 못했습니다. 입력 파일과 설정을 확인하세요.")
+            return
+
+        result_root = result.get("result_root")
+        sample_name = str(sample.get("sample_name", "sample"))
+        sample_dir = Path(result_root) / sample_name if result_root else Path("/__missing__")
+        qc_metrics = st.columns(4)
+        mapping_rate = sample.get("mapping_rate")
+        qc_metrics[0].metric(
+            "Mapping rate",
+            f"{float(mapping_rate):.1%}" if mapping_rate is not None else "N/A",
+        )
+        qc_metrics[1].metric("Mean depth", f"{float(sample.get('mean_depth', 0)):.1f}×")
+        qc_metrics[2].metric("Coverage ≥10×", f"{float(sample.get('coverage_10x', 0)):.1%}")
+        qc_metrics[3].metric("Mutation", int(sample.get("variants", 0) or 0))
+
+        pipeline_settings = result.get("pipeline_settings", {})
+        if not isinstance(pipeline_settings, dict):
+            pipeline_settings = {}
+        _display_table(
+            pd.DataFrame(_sample_stage_rows(sample_dir, sample, pipeline_settings))
+        )
+
+        st.write(
+            f"SNP **{sample.get('snp', 0)}** · "
+            f"Insertion **{sample.get('insertion', 0)}** · "
+            f"Deletion **{sample.get('deletion', 0)}**"
+        )
+        if sample.get("variant_source") == "samtools consensus review":
+            st.caption(
+                "Primary VCF에는 없지만 consensus 비교에서 확인된 mutation이므로 "
+                "REVIEW로 표시했습니다."
+            )
+        details = sample.get("variant_details", [])
+        if details:
+            _display_table(pd.DataFrame(details))
+
+        download_columns = st.columns(4)
+        with download_columns[0]:
+            _download_file_button(
+                "Raw consensus",
+                sample_dir / f"{sample_name}.samtools.consensus.fasta",
+                "text/plain",
+                f"raw_consensus_{job.job_dir.name}_{sample_name}",
+            )
+        with download_columns[1]:
+            _download_file_button(
+                "Final consensus",
+                sample_dir / f"{sample_name}.consensus.fasta",
+                "text/plain",
+                f"final_consensus_{job.job_dir.name}_{sample_name}",
+            )
+        with download_columns[2]:
+            _download_file_button(
+                "Primary VCF",
+                sample_dir / f"{sample_name}.vcf.gz",
+                "application/gzip",
+                f"primary_vcf_{job.job_dir.name}_{sample_name}",
+            )
+        with download_columns[3]:
+            _download_file_button(
+                "QC report",
+                sample_dir / f"{sample_name}_report.md",
+                "text/markdown",
+                f"qc_report_{job.job_dir.name}_{sample_name}",
+            )
+
+        archive_state_key = f"complete_zip_{job.job_dir.name}_{sample_name}"
+        st.caption(
+            "Complete results ZIP에는 merged/filtered FASTQ, BAM/index, depth, VCF, "
+            "Raw/Final consensus 및 report가 포함됩니다. 대용량 파일은 요청할 때만 생성합니다."
+        )
+        if st.button(
+            "Complete results ZIP 준비",
+            key=f"prepare_{archive_state_key}",
+            help="선택한 sample의 모든 중간·최종 결과를 ZIP으로 묶습니다.",
+        ):
+            try:
+                with st.spinner("전체 분석 결과를 ZIP으로 준비하고 있습니다…"):
+                    destination = (
+                        job.job_dir / "downloads" / f"{sample_name}_complete_results.zip"
+                    )
+                    archive_path = build_sample_results_zip(sample_dir, destination)
+                    st.session_state[archive_state_key] = str(archive_path)
+            except (BatchPreparationError, OSError) as exc:
+                st.error(str(exc))
+
+        prepared_archive = Path(str(st.session_state.get(archive_state_key, "")))
+        if prepared_archive.is_file():
+            archive_size_mb = prepared_archive.stat().st_size / (1024 * 1024)
+            with prepared_archive.open("rb") as archive_handle:
+                st.download_button(
+                    f"Complete results ZIP 다운로드 · {archive_size_mb:,.1f} MB",
+                    data=archive_handle,
+                    file_name=prepared_archive.name,
+                    mime="application/zip",
+                    key=f"download_{archive_state_key}",
+                    type="primary",
+                    use_container_width=True,
+                )
 
 
 def _batch_ont_tab(settings: dict[str, object]) -> None:
