@@ -705,6 +705,11 @@ def _render_batch_results(result: dict[str, object], job) -> None:
                             f"SNP **{sample.get('snp', 0)}** · INS **{sample.get('insertion', 0)}** · "
                             f"DEL **{sample.get('deletion', 0)}**"
                         )
+                        if sample.get("variant_source") == "samtools consensus review":
+                            st.caption(
+                                "Primary VCF에는 없지만 consensus 비교에서 확인된 "
+                                "mutation이므로 REVIEW로 표시했습니다."
+                            )
                         details = sample.get("variant_details", [])
                         if details:
                             _display_table(pd.DataFrame(details))
@@ -714,7 +719,10 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
     st.title("Batch analysis")
     st.caption("폴더를 선택한 뒤 각 Reference에 분석할 ONT sample을 직접 지정하세요.")
 
-    identity_columns = st.columns(2)
+    identity_panel = st.container(border=True)
+    identity_panel.markdown("### 1 · 분석 정보")
+    identity_panel.caption("이번 실행을 식별할 Project와 분석자 정보를 입력하세요.")
+    identity_columns = identity_panel.columns(2)
     with identity_columns[0]:
         project_name = st.text_input(
             "Project name",
@@ -729,11 +737,16 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             placeholder="분석자 이름",
             help="사용 기록에 남길 분석자 이름을 입력합니다.",
         ).strip()
-    st.caption("분석 시작·완료 시각과 Project/User 정보는 서버 사용 기록에 저장됩니다.")
+    identity_panel.caption(
+        "분석 시작·완료 시각과 Project/User 정보는 서버 사용 기록에 저장됩니다."
+    )
 
+    reference_panel = st.container(border=True)
+    reference_panel.markdown("### 2 · Reference 입력")
+    reference_panel.caption("분석 기준이 되는 FASTA 파일이 들어 있는 폴더를 선택하세요.")
     reference_is_selected = bool(st.session_state.get("reference_browser_selected"))
-    with st.expander(
-        "1 · Reference 폴더 선택",
+    with reference_panel.expander(
+        "Reference 폴더 탐색",
         expanded=not reference_is_selected,
     ):
         reference_folder = _server_folder_browser(
@@ -757,7 +770,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     list(server_reference_uploads(str(reference_folder))),
                 )
             except BatchPreparationError as exc:
-                st.error(str(exc))
+                reference_panel.error(str(exc))
 
     reference_uploads: list[object] = _restore_server_uploads(
         "loaded_server_references"
@@ -792,16 +805,21 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
             validation_errors.append(str(exc))
 
     if reference_uploads:
-        st.success(f"Reference {len(reference_uploads)}개 선택 완료")
-        with st.expander(f"Reference 확인 · {len(reference_uploads)}개", expanded=False):
+        reference_panel.success(f"Reference {len(reference_uploads)}개 선택 완료")
+        with reference_panel.expander(
+            f"Reference 확인 · {len(reference_uploads)}개", expanded=False
+        ):
             for row in reference_rows:
                 st.write(f"• {row['Reference file']}  ·  {row['Length (bp)']:,} bp")
     for error in validation_errors:
-        st.error(error)
+        reference_panel.error(error)
 
+    ont_panel = st.container(border=True)
+    ont_panel.markdown("### 3 · ONT sample 입력")
+    ont_panel.caption("분석이 끝난 ONT run 또는 fastq_pass 폴더를 선택하세요.")
     ont_is_selected = bool(st.session_state.get("ont_browser_selected"))
-    with st.expander(
-        "2 · ONT 결과 폴더 선택",
+    with ont_panel.expander(
+        "ONT 결과 폴더 탐색",
         expanded=not ont_is_selected,
     ):
         st.caption("sample 폴더들이 들어 있는 상위 폴더를 선택하세요.")
@@ -826,20 +844,23 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
                     list(server_fastq_uploads(str(ont_folder))),
                 )
             except BatchPreparationError as exc:
-                st.error(str(exc))
+                ont_panel.error(str(exc))
 
     all_reads: list[object] = _restore_server_uploads("loaded_server_fastqs")
     grouped_reads = uploaded_samples(all_reads)
     detected_sample_ids = list(grouped_reads)
     if grouped_reads:
-        st.success(f"ONT sample {len(grouped_reads)}개 선택 완료")
+        ont_panel.success(f"ONT sample {len(grouped_reads)}개 선택 완료")
 
     mappings: list[dict[str, object]] = []
     selected_by_reference: dict[str, list[str]] = {}
     if reference_uploads and grouped_reads:
-        st.markdown("### 3 · Reference별 ONT sample 선택")
-        st.caption("이름이나 순서를 추정하지 않습니다. 분석할 조합을 직접 선택하세요.")
-        assignment_columns = st.columns(2)
+        assignment_panel = st.container(border=True)
+        assignment_panel.markdown("### 4 · Reference별 ONT sample 선택")
+        assignment_panel.caption(
+            "이름이나 순서를 추정하지 않습니다. 분석할 조합을 직접 선택하세요."
+        )
+        assignment_columns = assignment_panel.columns(2)
         for index, reference_file in enumerate(reference_names, 1):
             with assignment_columns[(index - 1) % 2]:
                 reference_label = Path(reference_file).stem
@@ -881,7 +902,7 @@ def _batch_ont_tab(settings: dict[str, object]) -> None:
         len(sample_ids) for sample_ids in selected_by_reference.values()
     )
     if total_samples:
-        st.success(
+        assignment_panel.success(
             f"분석 조합 {total_samples}개 선택 완료 · Reference {len(mappings)}개"
         )
 

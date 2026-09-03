@@ -14,7 +14,12 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Callable, Sequence
 
-from .results import parse_flagstat, parse_vcf_variants, read_depth
+from .results import (
+    parse_consensus_fallback_variants,
+    parse_flagstat,
+    parse_vcf_variants,
+    read_depth,
+)
 from .sequences import SequenceRecord, parse_single_sequence, sanitize_name, write_fasta
 
 
@@ -479,6 +484,15 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
             if vcf.is_file()
             else []
         )
+        variant_source = "bcftools"
+        if not events:
+            events = parse_consensus_fallback_variants(
+                sample_dir / f"{sample_name}.samtools.consensus.fasta",
+                reference,
+                circular=bool(thresholds.get("circular", True)),
+            )
+            if events:
+                variant_source = "samtools consensus review"
         passed = sum(event.status == "PASS" for event in events)
         review = len(events) - passed
         low_qc = (
@@ -504,6 +518,7 @@ def collect_batch_results(job: BatchJob) -> dict[str, object]:
                 "insertion": sum(event.kind == "Insertion" for event in events),
                 "deletion": sum(event.kind == "Deletion" for event in events),
                 "variant_details": [event.as_row() for event in events],
+                "variant_source": variant_source,
             }
         )
 

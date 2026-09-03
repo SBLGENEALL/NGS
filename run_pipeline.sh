@@ -80,10 +80,18 @@ PILON_MEM="$(read_cfg pilon_mem 16G)"
 
 RUN_TIMESTAMP="$(date +%y%m%d_%H%M)"
 
-# bcftools mpileup supports a "-X ont" config preset in newer versions.
-BCFTOOLS_PLATFORM_OPT=""
-if command -v bcftools >/dev/null 2>&1 && bcftools mpileup 2>&1 | grep -qE -- '-X|--config'; then
-    BCFTOOLS_PLATFORM_OPT="-X ont"
+# Prefer the modern ONT SUP profile when the installed bcftools provides it.
+# The legacy `-X ont` profile contains `-I` (skip indels), so it must not be
+# used for a plasmid SNP/indel analyser. Older versions use compatible options
+# which keep indel calling enabled.
+BCFTOOLS_PLATFORM_MODE="compatible"
+BCFTOOLS_PROFILE="ONT compatible (-B -Q5)"
+if command -v bcftools >/dev/null 2>&1; then
+    BCFTOOLS_CONFIGS="$(bcftools mpileup -X list 2>&1 || true)"
+    if grep -qE '(^|[[:space:],])ont-sup([[:space:],]|$)' <<< "$BCFTOOLS_CONFIGS"; then
+        BCFTOOLS_PLATFORM_MODE="ont-sup"
+        BCFTOOLS_PROFILE="ont-sup"
+    fi
 fi
 
 echo "==================================================================="
@@ -92,6 +100,7 @@ echo "   references  : $REF_ROOT"
 echo "   data        : $DATA_ROOT"
 echo "   results     : $RESULTS_ROOT"
 echo "   preset      : $PRESET   threads/sample: $THREADS   parallel samples: $PARALLEL_JOBS"
+echo "   bcftools    : $BCFTOOLS_PROFILE"
 echo "==================================================================="
 
 mkdir -p "$RESULTS_ROOT"
@@ -323,7 +332,12 @@ process_one() {
     else
         # FORMAT/DP and FORMAT/AD let the UI calculate per-call depth and
         # alternate-allele fraction instead of relying on QUAL alone.
-        bcftools mpileup $BCFTOOLS_PLATFORM_OPT -a FORMAT/DP,FORMAT/AD -f "$REF_PATH" "$SORTED_BAM" \
+        local BCFTOOLS_PLATFORM_ARGS=(-B -Q 5)
+        if [[ "$BCFTOOLS_PLATFORM_MODE" == "ont-sup" ]]; then
+            BCFTOOLS_PLATFORM_ARGS=(-X ont-sup)
+        fi
+        bcftools mpileup "${BCFTOOLS_PLATFORM_ARGS[@]}" -Ou \
+            -a FORMAT/DP,FORMAT/AD -f "$REF_PATH" "$SORTED_BAM" \
             | bcftools call --ploidy 1 -mv -Oz -o "$VCF"
         bcftools index -f "$VCF"
     fi
@@ -404,7 +418,7 @@ echo "==================================================================="
 echo " Running $JOB_COUNT sample(s), $PARALLEL_JOBS at a time"
 echo "==================================================================="
 
-export DATA_ROOT RESULTS_ROOT PRESET THREADS MIN_LEN MIN_QUAL VARIANT_CALLER BCFTOOLS_PLATFORM_OPT PILON_JAR PILON_MEM RUN_TIMESTAMP
+export DATA_ROOT RESULTS_ROOT PRESET THREADS MIN_LEN MIN_QUAL VARIANT_CALLER BCFTOOLS_PLATFORM_MODE PILON_JAR PILON_MEM RUN_TIMESTAMP
 export -f process_one
 
 if [[ "$JOB_COUNT" -gt 0 ]]; then

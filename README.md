@@ -41,6 +41,10 @@ Reference 폴더와 ONT 결과 상위 폴더를 각각 선택하면 FASTA와 FAS
 `usage_logs/analysis_usage.csv`에 기록됩니다. `.bat`으로 실제 UI를 시작한 시각과
 Windows 사용자명은 `usage_logs/ui_access.log`에 남습니다.
 
+Variant calling은 설치된 bcftools가 지원하면 `ont-sup` profile을 사용합니다.
+구버전에서는 indel calling을 유지하는 호환 옵션을 사용하며, primary VCF가 비어도
+samtools consensus에서 Reference와 차이가 확인되면 해당 mutation을 `REVIEW`로 표시합니다.
+
 
 ## 핵심 아이디어: 폴더명 기반 자동 매칭
 

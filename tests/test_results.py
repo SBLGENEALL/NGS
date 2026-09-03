@@ -3,7 +3,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ont_ui.results import parse_flagstat, parse_vcf_variants, read_depth, variants_csv
+from ont_ui.results import (
+    parse_consensus_fallback_variants,
+    parse_flagstat,
+    parse_vcf_variants,
+    read_depth,
+    variants_csv,
+)
+from ont_ui.sequences import SequenceRecord
 
 
 class ResultParsingTests(unittest.TestCase):
@@ -69,6 +76,30 @@ class ResultParsingTests(unittest.TestCase):
     def test_variant_csv_has_stable_headers(self):
         text = variants_csv([])
         self.assertTrue(text.startswith("Position,Type,REF,ALT"))
+
+    def test_consensus_fallback_marks_differences_for_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            consensus = root / "consensus.fasta"
+            consensus.write_text(">query\nACGGACGT\n", encoding="utf-8")
+            fake = root / "minimap2"
+            fake.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf 'query\\t8\\t0\\t8\\t+\\treference\\t8\\t0\\t8\\t7\\t8\\t60\\tcs:Z::3*ta:4\\n'\n",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            events = parse_consensus_fallback_variants(
+                consensus,
+                SequenceRecord("reference", "ACGTACGT"),
+                circular=False,
+                minimap2=str(fake),
+            )
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].kind, "SNP")
+        self.assertEqual(events[0].status, "REVIEW")
+        self.assertIn("Consensus-only call", events[0].warnings[0])
 
 
 if __name__ == "__main__":

@@ -7,11 +7,18 @@ import gzip
 import io
 import math
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterable, TextIO
 
+from .compare import SequenceComparisonError, compare_sequences
 from .models import DepthMetrics, MappingMetrics, VariantEvent
-from .sequences import max_homopolymer_run_near, sequence_context
+from .sequences import (
+    SequenceRecord,
+    max_homopolymer_run_near,
+    parse_single_sequence,
+    sequence_context,
+)
 
 
 def _open_text(path: Path) -> TextIO:
@@ -243,6 +250,43 @@ def parse_vcf_variants(
                     )
                 )
     return events
+
+
+def parse_consensus_fallback_variants(
+    path: Path,
+    reference: SequenceRecord,
+    *,
+    circular: bool = True,
+    minimap2: str = "minimap2",
+) -> list[VariantEvent]:
+    """Return REVIEW calls when consensus differs but the primary VCF is empty."""
+    if not path.is_file():
+        return []
+    try:
+        query = parse_single_sequence(
+            path.read_text(encoding="utf-8"), default_name="consensus"
+        )
+        alignment = compare_sequences(
+            reference,
+            query,
+            circular=circular,
+            minimap2=minimap2,
+            preset="asm5",
+        )
+    except (OSError, SequenceComparisonError, ValueError):
+        return []
+    if alignment.query_coverage < 0.80:
+        return []
+    warning = "Consensus-only call; absent from the primary bcftools VCF"
+    return [
+        replace(
+            event,
+            status="REVIEW",
+            warnings=(*event.warnings, warning),
+        )
+        for event in alignment.variants
+        if "N" not in (event.ref + event.alt).upper()
+    ]
 
 
 def variants_csv(events: Iterable[VariantEvent]) -> str:

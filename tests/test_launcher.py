@@ -37,6 +37,12 @@ class OneClickLauncherTests(unittest.TestCase):
         ):
             self.assertIn(expected, text)
 
+    def test_pipeline_avoids_legacy_ont_profile_that_skips_indels(self):
+        text = (ROOT / "run_pipeline.sh").read_text(encoding="utf-8")
+        self.assertIn('BCFTOOLS_PLATFORM_MODE="ont-sup"', text)
+        self.assertNotIn('BCFTOOLS_PLATFORM_OPT="-X ont"', text)
+        self.assertIn('bcftools mpileup "${BCFTOOLS_PLATFORM_ARGS[@]}" -Ou', text)
+
 
 if __name__ == "__main__":
     unittest.main()
