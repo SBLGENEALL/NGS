@@ -43,6 +43,11 @@ class OneClickLauncherTests(unittest.TestCase):
         self.assertNotIn('BCFTOOLS_PLATFORM_OPT="-X ont"', text)
         self.assertIn('bcftools mpileup "${BCFTOOLS_PLATFORM_ARGS[@]}" -Ou', text)
 
+    def test_pipeline_exports_repository_path_to_parallel_workers(self):
+        text = (ROOT / "run_pipeline.sh").read_text(encoding="utf-8")
+        self.assertIn("export SCRIPT_DIR DATA_ROOT", text)
+        self.assertIn('$SCRIPT_DIR/ont_ui/fastq_qc.py', text)
+
 
 if __name__ == "__main__":
     unittest.main()

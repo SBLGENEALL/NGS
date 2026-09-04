@@ -435,7 +435,7 @@ echo "==================================================================="
 echo " Running $JOB_COUNT sample(s), $PARALLEL_JOBS at a time"
 echo "==================================================================="
 
-export DATA_ROOT RESULTS_ROOT PRESET THREADS MIN_LEN MIN_QUAL VARIANT_CALLER BCFTOOLS_PLATFORM_MODE PILON_JAR PILON_MEM RUN_TIMESTAMP
+export SCRIPT_DIR DATA_ROOT RESULTS_ROOT PRESET THREADS MIN_LEN MIN_QUAL VARIANT_CALLER BCFTOOLS_PLATFORM_MODE PILON_JAR PILON_MEM RUN_TIMESTAMP
 export -f process_one
 
 if [[ "$JOB_COUNT" -gt 0 ]]; then
