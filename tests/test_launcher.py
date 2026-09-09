@@ -69,6 +69,15 @@ class OneClickLauncherTests(unittest.TestCase):
         self.assertNotIn('BCFTOOLS_PLATFORM_OPT="-X ont"', text)
         self.assertIn('bcftools mpileup "${BCFTOOLS_PLATFORM_ARGS[@]}" -Ou', text)
 
+    def test_launch_ui_forwards_server_browser_and_storage_paths(self):
+        text = (ROOT / "launch_ui.sh").read_text(encoding="utf-8")
+        for expected in (
+            'SERVER_START="${ONT_SERVER_START:-$SERVER_ROOT}"',
+            'ONT_SERVER_ROOT="$SERVER_ROOT" ONT_SERVER_START="$SERVER_START"',
+            'ONT_LOG_ROOT="$LOG_ROOT" ONT_UI_RUN_ROOT="$UI_RUN_ROOT"',
+        ):
+            self.assertIn(expected, text)
+
     def test_pipeline_exports_repository_path_to_parallel_workers(self):
         text = (ROOT / "run_pipeline.sh").read_text(encoding="utf-8")
         self.assertIn("export SCRIPT_DIR DATA_ROOT", text)

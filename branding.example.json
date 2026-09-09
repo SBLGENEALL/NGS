@@ -1,9 +1,0 @@
-{
-  "organization": "YOUR ORGANIZATION",
-  "title": "ONT Plasmid Analyzer",
-  "subtitle": "Reference와 barcode 매칭 및 variant 분석",
-  "badge": "INTERNAL RESEARCH TOOL",
-  "distributed_by": "Jongin Baek",
-  "primary_color": "#2446C8",
-  "secondary_color": "#23398C"
-}

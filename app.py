@@ -163,9 +163,14 @@ def _server_folder_browser(
         st.error("서버 data 폴더에 접근할 수 없습니다. 관리자에게 확인하세요.")
         return None
 
-    current_raw = st.session_state.get(
-        f"{state_key}_current", str(SERVER_BROWSER_START)
-    )
+    configured_start = str(SERVER_BROWSER_START)
+    start_state_key = f"{state_key}_configured_start"
+    if st.session_state.get(start_state_key) != configured_start:
+        st.session_state[start_state_key] = configured_start
+        st.session_state[f"{state_key}_current"] = configured_start
+        st.session_state.pop(f"{state_key}_selected", None)
+
+    current_raw = st.session_state.get(f"{state_key}_current", configured_start)
     current = Path(str(current_raw)).expanduser().resolve()
     if not current.is_dir() or not _inside_server_root(current):
         current = SERVER_DATA_ROOT

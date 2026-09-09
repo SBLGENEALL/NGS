@@ -5,6 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${ONT_UI_PORT:-8502}"
 ADDRESS="${ONT_UI_ADDRESS:-0.0.0.0}"
 MODE="${1:-foreground}"
+SERVER_ROOT="${ONT_SERVER_ROOT:-/data}"
+SERVER_START="${ONT_SERVER_START:-$SERVER_ROOT}"
+LOG_ROOT="${ONT_LOG_ROOT:-$SCRIPT_DIR/usage_logs}"
+UI_RUN_ROOT="${ONT_UI_RUN_ROOT:-$SCRIPT_DIR/ui_runs}"
 
 find_environment() {
     local candidate
@@ -99,6 +103,8 @@ fi
 
 if [[ "$MODE" == "--background" ]]; then
     nohup env ONT_UI_ADDRESS="$ADDRESS" ONT_UI_PORT="$PORT" \
+        ONT_SERVER_ROOT="$SERVER_ROOT" ONT_SERVER_START="$SERVER_START" \
+        ONT_LOG_ROOT="$LOG_ROOT" ONT_UI_RUN_ROOT="$UI_RUN_ROOT" \
         "$SCRIPT_DIR/run_ui.sh" > "$SCRIPT_DIR/ui_launcher.log" 2>&1 &
     echo "$!" > "$SCRIPT_DIR/.ont_ui.pid"
     echo "Starting ONT Plasmid Analyzer: http://127.0.0.1:$PORT"
@@ -106,4 +112,7 @@ if [[ "$MODE" == "--background" ]]; then
 fi
 
 ( sleep 3; open_browser ) &
-exec env ONT_UI_ADDRESS="$ADDRESS" ONT_UI_PORT="$PORT" "$SCRIPT_DIR/run_ui.sh"
+exec env ONT_UI_ADDRESS="$ADDRESS" ONT_UI_PORT="$PORT" \
+    ONT_SERVER_ROOT="$SERVER_ROOT" ONT_SERVER_START="$SERVER_START" \
+    ONT_LOG_ROOT="$LOG_ROOT" ONT_UI_RUN_ROOT="$UI_RUN_ROOT" \
+    "$SCRIPT_DIR/run_ui.sh"
