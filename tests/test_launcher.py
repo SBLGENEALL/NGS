@@ -52,7 +52,7 @@ class OneClickLauncherTests(unittest.TestCase):
             'set "REMOTE_ENV=/home/MCET13/conda_envs/NGS_ONT_env"',
             'set "SERVER_ROOT=/data/user"',
             'set "SERVER_START=/data/user/MCET13"',
-            'set "LOG_ROOT=/data/user/MCET13/logs"',
+            'set "LOG_ROOT=/home/MCET13/.ont_plasmid_analyzer/logs"',
             'set "UI_RUN_ROOT=/data/user/MCET13/ui_runs"',
             "ONT_PROJECT_DIR=%REMOTE_PROJECT%",
             "ONT_CONDA_ENV=%REMOTE_ENV%",
