@@ -44,7 +44,9 @@ from ont_ui.sequences import (
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
-UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
+UI_RUN_ROOT = Path(
+    os.environ.get("ONT_UI_RUN_ROOT", str(REPOSITORY_ROOT / "ui_runs"))
+).expanduser().resolve()
 LOG_ROOT = Path(
     os.environ.get("ONT_LOG_ROOT", str(REPOSITORY_ROOT / "usage_logs"))
 ).expanduser().resolve()

@@ -35,6 +35,7 @@ class OneClickLauncherTests(unittest.TestCase):
             'SERVER_ROOT="${ONT_SERVER_ROOT:-/data}"',
             'SERVER_START="${ONT_SERVER_START:-$SERVER_ROOT}"',
             'LOG_ROOT="${ONT_LOG_ROOT:-$PROJECT_DIR/usage_logs}"',
+            'UI_RUN_ROOT="${ONT_UI_RUN_ROOT:-$PROJECT_DIR/ui_runs}"',
             "./launch_ui.sh --restart",
             '"$LOG_ROOT/ui_access.log"',
         ):
@@ -52,11 +53,13 @@ class OneClickLauncherTests(unittest.TestCase):
             'set "SERVER_ROOT=/data/user"',
             'set "SERVER_START=/data/user/MCET13"',
             'set "LOG_ROOT=/data/user/MCET13/logs"',
+            'set "UI_RUN_ROOT=/data/user/MCET13/ui_runs"',
             "ONT_PROJECT_DIR=%REMOTE_PROJECT%",
             "ONT_CONDA_ENV=%REMOTE_ENV%",
             "ONT_SERVER_ROOT=%SERVER_ROOT%",
             "ONT_SERVER_START=%SERVER_START%",
             "ONT_LOG_ROOT=%LOG_ROOT%",
+            "ONT_UI_RUN_ROOT=%UI_RUN_ROOT%",
         ):
             self.assertIn(expected, text)
 

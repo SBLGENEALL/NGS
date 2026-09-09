@@ -10,6 +10,7 @@ UI_PORT="${ONT_UI_PORT:-8502}"
 SERVER_ROOT="${ONT_SERVER_ROOT:-/data}"
 SERVER_START="${ONT_SERVER_START:-$SERVER_ROOT}"
 LOG_ROOT="${ONT_LOG_ROOT:-$PROJECT_DIR/usage_logs}"
+UI_RUN_ROOT="${ONT_UI_RUN_ROOT:-$PROJECT_DIR/ui_runs}"
 LAUNCH_USER="$(printf '%s' "${*:-unknown}" | tr -cd '[:alnum:]_.@ -')"
 LAUNCHED_AT="$(TZ=Asia/Seoul date '+%Y-%m-%dT%H:%M:%S%z')"
 
@@ -33,7 +34,7 @@ fi
 
 cd "$PROJECT_DIR"
 chmod +x launch_ui.sh run_ui.sh run_pipeline.sh
-mkdir -p "$LOG_ROOT"
+mkdir -p "$LOG_ROOT" "$UI_RUN_ROOT"
 printf '%s\tUI_LAUNCH\t%s\n' "$LAUNCHED_AT" "${LAUNCH_USER:-unknown}" \
     >> "$LOG_ROOT/ui_access.log"
 
@@ -43,6 +44,7 @@ ONT_UI_PORT="$UI_PORT" \
 ONT_SERVER_ROOT="$SERVER_ROOT" \
 ONT_SERVER_START="$SERVER_START" \
 ONT_LOG_ROOT="$LOG_ROOT" \
+ONT_UI_RUN_ROOT="$UI_RUN_ROOT" \
 ./launch_ui.sh --restart
 
 echo "ONT Plasmid Analyzer is ready on the SSH tunnel port."

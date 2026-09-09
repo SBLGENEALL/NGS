@@ -11,6 +11,7 @@ set "REMOTE_ENV=/home/MCET13/conda_envs/NGS_ONT_env"
 set "SERVER_ROOT=/data/user"
 set "SERVER_START=/data/user/MCET13"
 set "LOG_ROOT=/data/user/MCET13/logs"
+set "UI_RUN_ROOT=/data/user/MCET13/ui_runs"
 set "REMOTE_SCRIPT=%REMOTE_PROJECT%/ont_one_click.sh"
 set "UI_URL=http://127.0.0.1:%LOCAL_PORT%"
 set "MOBA_PATH="
@@ -28,7 +29,7 @@ if not defined MOBA_PATH (
     exit /b 1
 )
 
-start "" "%MOBA_PATH%" -newtab "ssh -o ExitOnForwardFailure=yes -L %LOCAL_PORT%:127.0.0.1:%REMOTE_PORT% %SERVER_USER%@%SERVER_HOST% 'ONT_PROJECT_DIR=%REMOTE_PROJECT% ONT_CONDA_ENV=%REMOTE_ENV% ONT_SERVER_ROOT=%SERVER_ROOT% ONT_SERVER_START=%SERVER_START% ONT_LOG_ROOT=%LOG_ROOT% ONT_UI_PORT=%REMOTE_PORT% bash %REMOTE_SCRIPT% %USERNAME%; exec bash -l'"
+start "" "%MOBA_PATH%" -newtab "ssh -o ExitOnForwardFailure=yes -L %LOCAL_PORT%:127.0.0.1:%REMOTE_PORT% %SERVER_USER%@%SERVER_HOST% 'ONT_PROJECT_DIR=%REMOTE_PROJECT% ONT_CONDA_ENV=%REMOTE_ENV% ONT_SERVER_ROOT=%SERVER_ROOT% ONT_SERVER_START=%SERVER_START% ONT_LOG_ROOT=%LOG_ROOT% ONT_UI_RUN_ROOT=%UI_RUN_ROOT% ONT_UI_PORT=%REMOTE_PORT% bash %REMOTE_SCRIPT% %USERNAME%; exec bash -l'"
 
 ping 127.0.0.1 -n 1 -w 500 >nul
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
