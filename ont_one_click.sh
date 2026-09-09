@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="/data/user/MCET03/04_ONT/NGS_ONT"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${ONT_PROJECT_DIR:-$SCRIPT_DIR}"
 CONDA_BASE="${CONDA_BASE:-/home/mcet/anaconda3}"
-CONDA_ENV="${ONT_CONDA_ENV:-/home/MCET03/conda_envs/NGS_ONT_env}"
+CONDA_ENV="${ONT_CONDA_ENV:-$HOME/conda_envs/NGS_ONT_env}"
 UI_ADDRESS="${ONT_UI_ADDRESS:-127.0.0.1}"
 UI_PORT="${ONT_UI_PORT:-8502}"
 SERVER_ROOT="${ONT_SERVER_ROOT:-/data}"
+SERVER_START="${ONT_SERVER_START:-$SERVER_ROOT}"
+LOG_ROOT="${ONT_LOG_ROOT:-$PROJECT_DIR/usage_logs}"
 LAUNCH_USER="$(printf '%s' "${*:-unknown}" | tr -cd '[:alnum:]_.@ -')"
 LAUNCHED_AT="$(TZ=Asia/Seoul date '+%Y-%m-%dT%H:%M:%S%z')"
 
@@ -30,14 +33,16 @@ fi
 
 cd "$PROJECT_DIR"
 chmod +x launch_ui.sh run_ui.sh run_pipeline.sh
-mkdir -p usage_logs
+mkdir -p "$LOG_ROOT"
 printf '%s\tUI_LAUNCH\t%s\n' "$LAUNCHED_AT" "${LAUNCH_USER:-unknown}" \
-    >> usage_logs/ui_access.log
+    >> "$LOG_ROOT/ui_access.log"
 
 ONT_CONDA_ENV="$CONDA_ENV" \
 ONT_UI_ADDRESS="$UI_ADDRESS" \
 ONT_UI_PORT="$UI_PORT" \
 ONT_SERVER_ROOT="$SERVER_ROOT" \
+ONT_SERVER_START="$SERVER_START" \
+ONT_LOG_ROOT="$LOG_ROOT" \
 ./launch_ui.sh --restart
 
 echo "ONT Plasmid Analyzer is ready on the SSH tunnel port."

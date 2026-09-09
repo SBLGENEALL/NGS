@@ -28,12 +28,35 @@ class OneClickLauncherTests(unittest.TestCase):
         text = (ROOT / "ont_one_click.sh").read_text(encoding="utf-8")
         for expected in (
             "/home/mcet/anaconda3",
-            "/home/MCET03/conda_envs/NGS_ONT_env",
+            '$HOME/conda_envs/NGS_ONT_env',
+            'PROJECT_DIR="${ONT_PROJECT_DIR:-$SCRIPT_DIR}"',
             "UI_ADDRESS=\"${ONT_UI_ADDRESS:-127.0.0.1}\"",
             "UI_PORT=\"${ONT_UI_PORT:-8502}\"",
-            "SERVER_ROOT=\"${ONT_SERVER_ROOT:-/data}\"",
+            'SERVER_ROOT="${ONT_SERVER_ROOT:-/data}"',
+            'SERVER_START="${ONT_SERVER_START:-$SERVER_ROOT}"',
+            'LOG_ROOT="${ONT_LOG_ROOT:-$PROJECT_DIR/usage_logs}"',
             "./launch_ui.sh --restart",
-            "usage_logs/ui_access.log",
+            '"$LOG_ROOT/ui_access.log"',
+        ):
+            self.assertIn(expected, text)
+
+    def test_mcet13_launcher_uses_public_pc_paths(self):
+        text = (ROOT / "ONT_Plasmid_Analyzer_MCET13_One_Click.bat").read_text(
+            encoding="utf-8"
+        )
+        for expected in (
+            'set "SERVER_USER=MCET13"',
+            'set "REMOTE_PORT=8513"',
+            'set "REMOTE_PROJECT=/home/MCET13/NGS_ONT"',
+            'set "REMOTE_ENV=/home/MCET13/conda_envs/NGS_ONT_env"',
+            'set "SERVER_ROOT=/home/user"',
+            'set "SERVER_START=/home/user/MCET13"',
+            'set "LOG_ROOT=/home/user/MCET13/logs"',
+            "ONT_PROJECT_DIR=%REMOTE_PROJECT%",
+            "ONT_CONDA_ENV=%REMOTE_ENV%",
+            "ONT_SERVER_ROOT=%SERVER_ROOT%",
+            "ONT_SERVER_START=%SERVER_START%",
+            "ONT_LOG_ROOT=%LOG_ROOT%",
         ):
             self.assertIn(expected, text)
 

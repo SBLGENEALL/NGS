@@ -45,11 +45,20 @@ from ont_ui.sequences import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent
 UI_RUN_ROOT = REPOSITORY_ROOT / "ui_runs"
-USAGE_LOG_PATH = REPOSITORY_ROOT / "usage_logs" / "analysis_usage.csv"
+LOG_ROOT = Path(
+    os.environ.get("ONT_LOG_ROOT", str(REPOSITORY_ROOT / "usage_logs"))
+).expanduser().resolve()
+USAGE_LOG_PATH = LOG_ROOT / "analysis_usage.csv"
 SERVER_DATA_ROOT = Path(
     os.environ.get("ONT_SERVER_ROOT", "/data")
 ).expanduser().resolve()
-SERVER_BROWSER_START = SERVER_DATA_ROOT
+SERVER_BROWSER_START = Path(
+    os.environ.get("ONT_SERVER_START", str(SERVER_DATA_ROOT))
+).expanduser().resolve()
+try:
+    SERVER_BROWSER_START.relative_to(SERVER_DATA_ROOT)
+except ValueError:
+    SERVER_BROWSER_START = SERVER_DATA_ROOT
 
 DEFAULT_ANALYSIS_SETTINGS: dict[str, dict[str, object]] = {
     "Batch analysis": {
